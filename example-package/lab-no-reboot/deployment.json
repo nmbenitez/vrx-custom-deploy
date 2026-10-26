@@ -1,0 +1,13 @@
+{
+  "name": "lab-no-reboot",
+  "version": "1.0",
+  "steps": [
+    {
+      "id": "lab-marker",
+      "type": "ps1",
+      "file": "write-marker.ps1",
+      "arguments": "",
+      "successCodes": [0]
+    }
+  ]
+}

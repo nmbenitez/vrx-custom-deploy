@@ -1,0 +1,1 @@
+"""vRx desktop package editor."""
