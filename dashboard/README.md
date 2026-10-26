@@ -12,6 +12,12 @@ Aplicación de escritorio para Ubuntu con entorno gráfico. Usa Python, CustomTk
 
 Los borradores se guardan en `~/.vrx-deployment/drafts/`; la configuración, en `~/.vrx-deployment/settings.json`. Una publicación es inmutable: para cambiarla, usar **Duplicar** y poner un nombre nuevo. El dashboard publica `deployment.json`, los archivos del paquete y `manifest.txt`; el bootstrap operativo se mantiene cargado en vRx.
 
+En un paso **Reiniciar Windows** se puede configurar una cuenta regresiva en segundos y un mensaje para el aviso nativo de Windows. Por ejemplo, `300` segundos y `Actualización de aplicaciones: este equipo se reiniciará en cinco minutos.` El mensaje requiere una demora mayor que cero. Si ambos campos quedan vacíos o en cero, el reinicio es inmediato. El motor guarda el siguiente paso y programa su reanudación antes de pedir el reinicio. Una cuenta regresiva mayor que cero fuerza el cierre de aplicaciones al terminar, como `shutdown /r /t 300 /f /c "mensaje"`.
+
+Si un instalador devuelve `3010` y el siguiente paso es **Reiniciar Windows**, ese paso realiza el reinicio y muestra su aviso configurado.
+
+Para usar esta función en equipos Windows, la acción fija de vRx debe contener la versión actualizada de `windows-client/09-vrx-bootstrap.ps1`; cambiar solo el dashboard en Ubuntu no actualiza el motor ya cargado en vRx.
+
 En vRx se carga una sola vez `windows-client/09-vrx-bootstrap.ps1`. Allí se configura `$Server` una vez. Para cada conjunto publicado, el operador cambia `$RemoteFolder` al nombre del paquete y ejecuta con `$BootstrapMode = "DownloadOnly"` en los grupos y horarios deseados. Cuando corresponda instalar, cambia únicamente `$BootstrapMode = "Deploy"` y vuelve a ejecutar la misma acción. No cambiar el modo de una acción que todavía tenga lanzamientos de descarga pendientes, salvo que vRx confirme que cada programación conserva una copia de sus variables.
 
 El directorio `/srv/packages` debe ser local al equipo donde se usa la aplicación. Si el Ubuntu con escritorio es distinto del servidor que aloja Nginx, montar allí el repositorio de paquetes o transferir el ZIP exportado y regenerar el manifiesto en el servidor.

@@ -112,10 +112,16 @@ try {
         Write-DeploymentLog
 
         if ($Step.type -eq 'reboot') {
+            $RebootDelay = 0
+            if ($null -ne $Step.rebootDelaySeconds -and
+                -not [int]::TryParse([string]$Step.rebootDelaySeconds, [ref]$RebootDelay)) {
+                throw "Invalid reboot delay in step $($Step.id)."
+            }
+            $RebootMessage = [string]$Step.rebootMessage
             $State.NextStep = $Index + 1
             $LogMessage = "Managed reboot step completed: $($Step.id)"
             Write-DeploymentLog
-            Request-ManagedReboot
+            Request-ManagedReboot -DelaySeconds $RebootDelay -Message $RebootMessage
             exit 0
         }
 
@@ -158,6 +164,11 @@ try {
         Save-DeploymentState
 
         if ($Code -eq 3010) {
+            if (($Index + 1) -lt $Steps.Count -and $Steps[$Index + 1].type -eq 'reboot') {
+                $LogMessage = "Step $($Step.id) needs a reboot (3010); next configured reboot step will handle it."
+                Write-DeploymentLog
+                continue
+            }
             $LogMessage = "Step $($Step.id) needs a reboot (3010)."
             Write-DeploymentLog
             Request-ManagedReboot

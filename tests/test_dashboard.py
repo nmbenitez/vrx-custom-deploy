@@ -71,6 +71,26 @@ class DesktopPublicationTests(unittest.TestCase):
             definition = json.loads(archive.read("portable/deployment.json"))
             self.assertEqual(definition["name"], "portable")
 
+    def test_reboot_warning_is_published_and_validated(self):
+        self.service.create("reboot-demo")
+        self.service.set_step("reboot-demo", {
+            "id": "initial-reboot", "type": "reboot", "label": "Reinicio inicial",
+            "rebootDelaySeconds": 300,
+            "rebootMessage": "Actualización de aplicaciones: este equipo se reiniciará en cinco minutos.",
+        })
+        self.service.publish("reboot-demo")
+        definition = json.loads((self.packages / "reboot-demo" / "deployment.json").read_text(encoding="utf-8"))
+        self.assertEqual(definition["steps"][0]["rebootDelaySeconds"], 300)
+        self.assertIn("cinco minutos", definition["steps"][0]["rebootMessage"])
+
+        self.service.create("invalid-reboot")
+        for delay, message in ((-1, ""), (0, "Aviso"), (300, 'Aviso "con comillas"')):
+            with self.assertRaises(ValueError):
+                self.service.set_step("invalid-reboot", {
+                    "id": "reboot", "type": "reboot",
+                    "rebootDelaySeconds": delay, "rebootMessage": message,
+                })
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,7 +9,7 @@ import zipfile
 
 from .publisher import (
     EXTENSIONS, TYPES, draft_path, file_name, load_draft, package_name,
-    publish, save_draft, validate_definition,
+    publish, save_draft, validate_definition, validate_reboot_options,
 )
 
 
@@ -94,7 +94,10 @@ class PackageService:
         if any(existing["id"] == identifier for position, existing in enumerate(steps) if position != index):
             raise ValueError("Ya existe un paso con ese identificador.")
         clean = {"id": identifier, "type": kind, "label": str(step.get("label", identifier)).strip() or identifier}
-        if kind != "reboot":
+        if kind == "reboot":
+            delay, message = validate_reboot_options(step)
+            clean.update(rebootDelaySeconds=delay, rebootMessage=message)
+        else:
             filename = file_name(step.get("file", ""))
             if filename not in self.files(name):
                 raise ValueError("Primero cargá el archivo del paso.")

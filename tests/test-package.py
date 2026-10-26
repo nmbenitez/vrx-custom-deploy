@@ -22,7 +22,7 @@ windows = root / 'windows-client'
 
 for source in list(windows.glob('*.ps1')) + list(windows.glob('*.psm1')):
     content = read_text(source)
-    assert not re.search(r'\bparam\s*\(', content, re.I), source.name
+    assert not re.search(r'(?m)^param\s*\(', content, re.I), source.name
     assert content.startswith('#Requires') or content.startswith('# ============================================'), source.name
 
 required = ('02-package-download.psm1',)

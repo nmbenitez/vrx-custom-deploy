@@ -31,6 +31,18 @@ def file_name(value):
     return value
 
 
+def validate_reboot_options(step):
+    delay = step.get("rebootDelaySeconds", 0)
+    message = step.get("rebootMessage", "")
+    if type(delay) is not int or not 0 <= delay <= 315360000:
+        raise ValueError("La cuenta regresiva del reinicio debe ser un número entero entre 0 y 315360000 segundos.")
+    if not isinstance(message, str) or len(message) > 512 or any(ord(char) < 32 or char == '"' for char in message):
+        raise ValueError("El mensaje de reinicio admite hasta 512 caracteres, sin comillas ni saltos de línea.")
+    if message and delay == 0:
+        raise ValueError("El mensaje de reinicio requiere una cuenta regresiva mayor que cero.")
+    return delay, message
+
+
 def validate_definition(definition, available_files):
     name = package_name(definition.get("name", ""))
     steps = definition.get("steps", [])
@@ -44,7 +56,9 @@ def validate_definition(definition, available_files):
         seen.add(identifier)
         if step.get("type") not in TYPES:
             raise ValueError(f"Tipo de paso inválido: {identifier}")
-        if step["type"] != "reboot":
+        if step["type"] == "reboot":
+            validate_reboot_options(step)
+        else:
             selected = file_name(step.get("file", ""))
             if selected not in available_files:
                 raise ValueError(f"Falta el archivo {selected} del paso {identifier}.")

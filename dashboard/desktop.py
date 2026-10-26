@@ -77,6 +77,8 @@ class StepDialog(ctk.CTkToplevel):
         self.file_var = tk.StringVar(value=existing.get("file") or (files[0] if files else "Sin archivos"))
         self.arguments_var = tk.StringVar(value=existing.get("arguments", ""))
         self.codes_var = tk.StringVar(value=",".join(map(str, existing.get("successCodes", [0, 3010]))))
+        self.reboot_delay_var = tk.StringVar(value=str(existing.get("rebootDelaySeconds", 0)))
+        self.reboot_message_var = tk.StringVar(value=existing.get("rebootMessage", ""))
 
         card = ctk.CTkFrame(self, fg_color=CARD, corner_radius=18)
         card.pack(fill="both", expand=True, padx=18, pady=18)
@@ -92,10 +94,15 @@ class StepDialog(ctk.CTkToplevel):
                                     files or ["Sin archivos"])
         self.arguments_entry = self._entry(card, 8, "Argumentos", self.arguments_var)
         self.codes_entry = self._entry(card, 10, "Códigos de éxito", self.codes_var)
+        self.reboot_fields = ctk.CTkFrame(card, fg_color="transparent")
+        self.reboot_fields.grid(row=12, column=0, sticky="ew", padx=24)
+        self.reboot_fields.grid_columnconfigure(0, weight=1)
+        self._entry(self.reboot_fields, 0, "Cuenta regresiva antes de reiniciar (segundos)", self.reboot_delay_var)
+        self._entry(self.reboot_fields, 2, "Mensaje de reinicio para Windows", self.reboot_message_var)
         ctk.CTkLabel(card, text="Ejemplo: 0,3010. MSI agrega /i y /norestart.",
-                     text_color=MUTED, font=(FONT, 10)).grid(row=12, column=0, sticky="w", padx=24, pady=(5, 12))
+                     text_color=MUTED, font=(FONT, 10)).grid(row=13, column=0, sticky="w", padx=24, pady=(5, 12))
         buttons = ctk.CTkFrame(card, fg_color="transparent")
-        buttons.grid(row=13, column=0, sticky="e", padx=24, pady=(0, 20))
+        buttons.grid(row=14, column=0, sticky="e", padx=24, pady=(0, 20))
         action_button(buttons, "Cancelar", self.destroy, width=104).pack(side="left", padx=(0, 8))
         action_button(buttons, "Guardar paso", self._save, primary=True, width=130).pack(side="left")
         self._toggle_fields()
@@ -122,9 +129,16 @@ class StepDialog(ctk.CTkToplevel):
         return widget
 
     def _toggle_fields(self):
-        state = "disabled" if TYPE_CODES[self.type_var.get()] == "reboot" else "normal"
+        reboot = TYPE_CODES[self.type_var.get()] == "reboot"
+        state = "disabled" if reboot else "normal"
         for widget in (self.file_menu, self.arguments_entry, self.codes_entry):
             widget.configure(state=state)
+        if reboot:
+            self.reboot_fields.grid()
+            self.geometry("560x615")
+        else:
+            self.reboot_fields.grid_remove()
+            self.geometry("560x495")
 
     def _save(self):
         label = self.label_var.get().strip()
@@ -133,7 +147,21 @@ class StepDialog(ctk.CTkToplevel):
             messagebox.showerror("Paso incompleto", "Escribí una descripción para el paso.", parent=self)
             return
         step = {"id": identifier, "label": label, "type": TYPE_CODES[self.type_var.get()]}
-        if step["type"] != "reboot":
+        if step["type"] == "reboot":
+            try:
+                delay = int(self.reboot_delay_var.get().strip())
+            except ValueError:
+                messagebox.showerror("Demora inválida", "Usá un número entero de segundos.", parent=self)
+                return
+            message = self.reboot_message_var.get().strip()
+            if delay < 0 or delay > 315360000 or len(message) > 512 or '"' in message or '\n' in message or '\r' in message:
+                messagebox.showerror("Reinicio inválido", "La demora debe estar entre 0 y 315360000 segundos; el mensaje admite hasta 512 caracteres, sin comillas.", parent=self)
+                return
+            if message and delay == 0:
+                messagebox.showerror("Reinicio inválido", "Usá una cuenta regresiva mayor que cero para mostrar el mensaje.", parent=self)
+                return
+            step.update(rebootDelaySeconds=delay, rebootMessage=message)
+        else:
             if self.file_var.get() == "Sin archivos":
                 messagebox.showerror("Paso incompleto", "Primero cargá un archivo.", parent=self)
                 return
@@ -543,6 +571,8 @@ class VrxDesktop(ctk.CTk):
             ctk.CTkLabel(row, text=step.get("label", step["id"]), text_color=TEXT,
                          font=(FONT, 12, "bold")).grid(row=0, column=1, sticky="sw", pady=(8, 0))
             detail = TYPE_NAMES[step["type"]] + (f"  ·  {step['file']}" if step.get("file") else "")
+            if step["type"] == "reboot" and step.get("rebootDelaySeconds", 0):
+                detail += f"  ·  {step['rebootDelaySeconds']} s"
             ctk.CTkLabel(row, text=detail, text_color=MUTED, font=(FONT, 10)).grid(
                 row=1, column=1, sticky="nw", pady=(0, 8))
             controls = ctk.CTkFrame(row, fg_color="transparent")
