@@ -18,6 +18,8 @@ El dashboard guarda los borradores en `~/.vrx-deployment/drafts/`. Al publicar, 
 
 En Windows, el bootstrap puede lanzarse en modo `DownloadOnly` para descargar en distintos horarios. Luego se vuelve a lanzar la **misma acción** en modo `Deploy`. Una tarea local sigue trabajando aunque la ejecución de vRx ya haya terminado; al recuperar conexión o encenderse la PC, reintenta las descargas pendientes. También se puede lanzar directamente en modo `Deploy`.
 
+Las tareas programadas `vRxDeploy-Launch` y `vRxDeploy-Resume` se eliminan cuando el despliegue termina o falla de forma definitiva. Mientras la descarga siga pendiente, o el paquete esté en `Staged` esperando el lanzamiento `Deploy`, la tarea de descarga permanece registrada para poder continuar.
+
 ## Instalar el dashboard en Ubuntu
 
 Estos comandos se ejecutan en el **Ubuntu con escritorio gráfico** donde está el repositorio. Si ya lo clonaste, entrá directamente en su carpeta y omití `git clone`.

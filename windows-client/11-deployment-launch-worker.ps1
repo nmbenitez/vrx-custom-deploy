@@ -10,6 +10,15 @@ $Mutex = $null
 $HasMutex = $false
 $TranscriptStarted = $false
 
+function Remove-LaunchTask {
+    Unregister-ScheduledTask -TaskName $LaunchTaskName -Confirm:$false -ErrorAction SilentlyContinue
+}
+
+function Remove-TerminalTasks {
+    Remove-LaunchTask
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+}
+
 function Get-RequestedMode {
     if (Test-Path -LiteralPath $ModePath -PathType Leaf) {
         $Mode = (Get-Content -LiteralPath $ModePath -Raw -Encoding ASCII).Trim()
@@ -105,6 +114,15 @@ try {
     }
     exit 1
 } finally {
+    # DownloadOnly remains scheduled while staged; terminal outcomes do not.
+    try {
+        if (Test-Path -LiteralPath $StatePath -PathType Leaf) {
+            $FinalState = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($FinalState.Status -in @('Completed','Failed')) { Remove-TerminalTasks }
+        } elseif ($null -ne $Receipt -and $Receipt.Status -eq 'Failed') {
+            Remove-TerminalTasks
+        }
+    } catch { Write-Warning "Scheduled task cleanup failed: $($_.Exception.Message)" }
     if ($TranscriptStarted) { Stop-Transcript | Out-Null }
     if ($HasMutex) { $Mutex.ReleaseMutex() }
     if ($null -ne $Mutex) { $Mutex.Dispose() }

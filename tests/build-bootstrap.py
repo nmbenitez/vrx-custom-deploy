@@ -37,6 +37,13 @@ $ErrorActionPreference = "Stop"
 $BootstrapMutex = $null
 $HasBootstrapMutex = $false
 $ReceiptCreatedThisRun = $false
+$RegisteredLaunchTaskThisRun = $false
+
+function Remove-TerminalTasks {
+    foreach ($Name in @('vRxDeploy-Launch', 'vRxDeploy-Resume')) {
+        Unregister-ScheduledTask -TaskName $Name -Confirm:$false -ErrorAction SilentlyContinue
+    }
+}
 try {
     if ($Server -notmatch '^[A-Za-z0-9.:-]+$') { throw 'Set a valid $Server in the vRx script.' }
     if ($RemoteFolder -notmatch '^[A-Za-z0-9_-][A-Za-z0-9_.-]*$') { throw 'Set $RemoteFolder to a published package name in the vRx script.' }
@@ -72,8 +79,15 @@ try {
     }
     if (Test-Path -LiteralPath $StatePath -PathType Leaf) {
         $Existing = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
-        if ($Existing.Status -eq 'Completed') { Write-Host "ALREADY_COMPLETED: $RemoteFolder"; exit 0 }
-        if ($Existing.Status -eq 'Failed') { throw "Previous deployment failed: $RemoteFolder. Investigate before resetting state." }
+        if ($Existing.Status -eq 'Completed') {
+            Remove-TerminalTasks
+            Write-Host "ALREADY_COMPLETED: $RemoteFolder"
+            exit 0
+        }
+        if ($Existing.Status -eq 'Failed') {
+            Remove-TerminalTasks
+            throw "Previous deployment failed: $RemoteFolder. Investigate before resetting state."
+        }
         if ($Existing.Status -in @('Running','WaitingForReboot')) {
             Write-Host "ALREADY_ACTIVE: $RemoteFolder ($($Existing.Status)). No duplicate launch issued."
             exit 0
@@ -81,7 +95,10 @@ try {
     }
     if (Test-Path -LiteralPath $ReceiptPath -PathType Leaf) {
         $ExistingReceipt = Get-Content -LiteralPath $ReceiptPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        if ($ExistingReceipt.Status -eq 'Failed') { throw "Previous launch failed: $RemoteFolder. Investigate before resetting state." }
+        if ($ExistingReceipt.Status -eq 'Failed') {
+            Remove-TerminalTasks
+            throw "Previous launch failed: $RemoteFolder. Investigate before resetting state."
+        }
         if ($ExistingReceipt.Package -ne $RemoteFolder) { throw 'Launch receipt belongs to a different package.' }
         if ($ExistingReceipt.Server -and $ExistingReceipt.Server -ne $Server) { throw 'The staged package belongs to a different server.' }
         $ExistingMode = if (Test-Path -LiteralPath $ModePath -PathType Leaf) {
@@ -141,6 +158,7 @@ __ARCHIVE__
     $Retry = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(15) -RepetitionInterval (New-TimeSpan -Minutes 15) -RepetitionDuration (New-TimeSpan -Days 365)
     $Settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 12) -MultipleInstances IgnoreNew
     Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger @($Startup, $Retry) -Principal $Principal -Settings $Settings -Force | Out-Null
+    $RegisteredLaunchTaskThisRun = $true
 
     # Durable launch receipt for one-shot status checks before engine state is created.
     Set-Content -LiteralPath "$ModePath.tmp" -Value $BootstrapMode -Encoding ASCII
@@ -168,6 +186,9 @@ __ARCHIVE__
     Write-Host 'Launch accepted != deployment completed. Run 10-vrx-check-status.ps1 separately to check progress.'
     exit 0
 } catch {
+    if ($RegisteredLaunchTaskThisRun) {
+        try { Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue } catch {}
+    }
     # Mark a failed dispatch as Failed rather than leaving an ambiguous Queued receipt.
     if ($ReceiptCreatedThisRun -and $null -ne $ReceiptPath -and (Test-Path -LiteralPath $ReceiptPath -PathType Leaf) -and
         -not (Test-Path -LiteralPath $StatePath -PathType Leaf)) {

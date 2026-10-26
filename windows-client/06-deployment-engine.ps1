@@ -4,6 +4,7 @@
 # ============================================
 . "$PSScriptRoot\00-config.ps1"
 . "$PSScriptRoot\00-manifest-helpers.ps1"
+. "$PSScriptRoot\07-reboot-manager.ps1"
 $DeploymentFile = Join-Path $DestinationFolder "deployment.json"
 $ManifestPath = Join-Path $StateDir "manifest.txt"  # Snapshot for reboot-safe verification.
 $Mutex = $null
@@ -87,7 +88,7 @@ try {
         Save-DeploymentState
     }
 
-    if ($State.Status -eq 'Completed') { $LogMessage = 'Already completed.'; Write-DeploymentLog; Remove-ResumeTask; exit 0 }
+    if ($State.Status -eq 'Completed') { $LogMessage = 'Already completed.'; Write-DeploymentLog; Remove-ResumeTask; Remove-LaunchTask; exit 0 }
     if ($State.Status -eq 'Failed') { throw 'Previous attempt failed. Inspect log and state; explicit reset required.' }
     if ($State.Status -eq 'WaitingForReboot') {
         $CurrentBoot = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().ToString('o')
@@ -104,8 +105,6 @@ try {
     }
 
     Check-PackageSnapshot
-    . "$PSScriptRoot\07-reboot-manager.ps1"
-
     for ($Index = [int]$State.NextStep; $Index -lt $Steps.Count; $Index++) {
         $Step = $Steps[$Index]
         $LogMessage = "Starting step $($Index + 1)/$($Steps.Count): $($Step.id) ($($Step.type))"
@@ -180,6 +179,7 @@ try {
     $State.UpdatedAt = (Get-Date).ToUniversalTime().ToString('o')
     Save-DeploymentState
     Remove-ResumeTask
+    Remove-LaunchTask
     $LogMessage = 'DEPLOYMENT COMPLETED: all configured steps succeeded; final product detection is not yet implemented.'
     Write-DeploymentLog
     exit 0
@@ -196,6 +196,7 @@ try {
     if ($null -eq $State -or $State.Status -ne 'WaitingForReboot') {
         try { Remove-ResumeTask } catch {}
     }
+    try { Remove-LaunchTask } catch {}
     exit 1
 } finally {
     if ($HasMutex) { $Mutex.ReleaseMutex() }

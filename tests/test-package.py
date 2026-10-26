@@ -53,12 +53,16 @@ for internal_setting in ('DownloadMethod', 'CurlBypassProxy', 'CurlRetryCount',
                          'CurlConnectTimeoutSeconds', 'CurlMaxTimeSeconds', 'DownloadAttempts'):
     assert '$' + internal_setting + ' =' not in operator_section
 assert "if ($BootstrapMode -eq 'DownloadOnly')" in bootstrap
+assert "function Remove-TerminalTasks" in bootstrap
+assert "Unregister-ScheduledTask -TaskName $Name" in bootstrap
 assert "DEPLOY_QUEUED:" in bootstrap
 assert "$ModePath = Join-Path $StateDir 'requested-mode.txt'" in bootstrap
 assert "$ReceiptCreatedThisRun" in bootstrap
 assert bootstrap.index('Write-Host "DEPLOY_QUEUED:') < bootstrap.index('Remove-Item -LiteralPath $Extracted -Recurse -Force')
 assert "foreach ($ScriptName in @('02-download-package-folder.ps1'" not in bootstrap
 worker = read_text(windows / '11-deployment-launch-worker.ps1')
+assert "if ($FinalState.Status -in @('Completed','Failed')) { Remove-TerminalTasks }" in worker
+assert "if ($null -ne $Receipt -and $Receipt.Status -eq 'Failed')" in worker
 assert "'RetryScheduled'" in worker and "'ReadyToInstall'" in worker
 assert "'Staged'" in worker and "Get-RequestedMode" in worker
 assert worker.index("$Receipt.Status = 'Staged'") < worker.index("'12-start-staged-deployment.ps1'")
@@ -70,6 +74,13 @@ assert "'--continue-at', '-'" in helper
 assert 'if (-not $ResumePartialDownload)' in helper
 folder = read_text(windows / '02-package-download.psm1')
 assert 'ManifestSnapshot' in folder and 'ResumePartialDownload = $true' in folder
+
+engine = read_text(windows / '06-deployment-engine.ps1')
+assert engine.count('Remove-LaunchTask') >= 3
+assert "if ($State.Status -eq 'Completed')" in engine
+reboot_manager = read_text(windows / '07-reboot-manager.ps1')
+assert 'Unregister-ScheduledTask -TaskName $TaskName' in reboot_manager
+assert 'Unregister-ScheduledTask -TaskName $LaunchTaskName' in reboot_manager
 
 if shutil.which('bash'):
     for source in ubuntu.glob('*.sh'):

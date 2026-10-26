@@ -17,6 +17,10 @@ function Remove-ResumeTask {
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
 }
 
+function Remove-LaunchTask {
+    Unregister-ScheduledTask -TaskName $LaunchTaskName -Confirm:$false -ErrorAction SilentlyContinue
+}
+
 function Request-ManagedReboot {
     param(
         [int]$DelaySeconds = 0,
