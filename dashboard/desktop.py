@@ -614,6 +614,9 @@ class VrxDesktop(ctk.CTk):
 
     def _step_dialog(self, index=None):
         if not self.selected_name:
+            message = "Primero creá o seleccioná un paquete con + Nuevo."
+            self.status_var.set(message)
+            messagebox.showinfo("Sin paquete seleccionado", message, parent=self)
             return
         existing = self.service.load(self.selected_name)["steps"][index] if index is not None else None
         dialog = StepDialog(self, self.service.files(self.selected_name), existing)
