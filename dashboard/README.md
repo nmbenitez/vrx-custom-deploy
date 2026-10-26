@@ -1,5 +1,7 @@
 # Editor de automatizaciones vRx
 
+La [guía principal](../README.md) incluye instalación en Ubuntu, creación de paquetes y capturas de cada sección.
+
 Aplicación de escritorio para Ubuntu con entorno gráfico. Usa Python, CustomTkinter y Pillow; no necesita navegador ni servidor web. El operador crea un borrador, agrega instaladores y pasos, y pulsa **Publicar paquete**. La aplicación genera `deployment.json` dentro de `/srv/packages/<nombre>/` y actualiza `/srv/packages/manifest.txt` automáticamente.
 
 ## Ejecutar en Ubuntu Desktop

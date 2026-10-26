@@ -1,51 +1,156 @@
-# vRx Deployment System (desarrollo v0.3)
+# vRx Custom Deploy
 
-Sistema piloto para publicar paquetes desde Ubuntu y desplegarlos en Windows mediante ejecuciones breves de vRx. Incluye una aplicación de escritorio para crear `deployment.json` mediante formularios y un trabajador local que recupera descargas interrumpidas.
+Aplicación de escritorio para **Ubuntu con entorno gráfico** que permite crear paquetes de despliegue sin escribir `deployment.json` a mano. El operador carga archivos, ordena pasos y pulsa **Publicar paquete**. Las PC Windows reciben el paquete a través de una única acción de vRx.
 
-**Estado:** la publicación y las verificaciones automáticas funcionan en el entorno de desarrollo. Las tareas programadas, la descarga recuperable y los reinicios todavía requieren pruebas en una VM Windows con PowerShell 5.1 antes de distribuirse al cliente. El transporte actual usa HTTP y no autentica el manifiesto.
+> **Estado del piloto:** el editor y la publicación tienen pruebas automáticas. La ejecución con tareas programadas, reinicios y descargas reanudables aún debe validarse en las PC Windows del piloto. El repositorio HTTP actual no autentica el origen de los paquetes.
 
 ## Cómo funciona
 
-1. En Ubuntu con escritorio gráfico, el operador abre la aplicación ([instalación](dashboard/README.md)), crea un borrador, carga archivos, configura los pasos y publica. La aplicación escribe `/srv/packages/<paquete>/deployment.json` y actualiza `/srv/packages/manifest.txt`.
-2. El bootstrap se carga una vez en vRx. Allí se configura `$Server` una vez. Antes de cada lanzamiento, el operador edita en esa misma acción `$RemoteFolder` con el nombre publicado y `$BootstrapMode` con `DownloadOnly` o `Deploy`. No se genera un script por paquete.
-3. Cada ejecución de vRx devuelve el control enseguida. En la primera fase el bootstrap registra una tarea SYSTEM al inicio de Windows y cada 15 minutos; descarga, verifica y queda en estado `Staged` sin iniciar el motor. En la segunda cambia la solicitud local a `Deploy` y despierta la misma tarea. También puede usarse `Deploy` directamente, sin fase previa.
-4. La tarea descarga y verifica archivos. Conserva archivos completos válidos y descargas parciales. Después de un apagado o una pérdida de conectividad vuelve a intentarlo. Una demora aleatoria de hasta dos minutos distribuye los intentos entre equipos. Una copia del manifiesto queda asociada a la solicitud.
-5. Cuando se solicita `Deploy`, la tarea reutiliza los archivos completos válidos y termina cualquier descarga pendiente antes de ejecutar los pasos de `deployment.json`. Sus reinicios se retoman con otra tarea SYSTEM.
-6. `10-vrx-check-status.ps1` consulta el estado en una ejecución independiente de vRx. Código `0`: despliegue completado; `1`: falló; `2`: pendiente, descargando, `Staged` o despliegue en curso. `Staged` significa descarga verificada, aún sin instalación.
+```text
+Ubuntu: dashboard → /srv/packages/<paquete>/ → Nginx
+                                             ↓ descarga
+vRx: acción fija → bootstrap en Windows → tarea local persistente
+                                             ↓
+                              descarga, verificación y pasos
+```
 
-Si se programan grupos en horarios distintos con la misma acción de vRx, mantener `$RemoteFolder` y `$BootstrapMode` en `DownloadOnly` hasta que salgan todos los lanzamientos de descarga. La programación podría leer el contenido actualizado de la acción al ejecutarse; este comportamiento debe comprobarse en el entorno de vRx antes del piloto.
+El dashboard guarda los borradores en `~/.vrx-deployment/drafts/`. Al publicar, copia los archivos a `/srv/packages/<nombre>/`, genera allí `deployment.json` y actualiza `/srv/packages/manifest.txt`. El botón **Guardar** del directorio de paquetes conserva esa ruta en `~/.vrx-deployment/settings.json`; no configura una IP. La IP del Ubuntu se escribe en la acción fija de vRx.
 
-## Componentes
+En Windows, el bootstrap puede lanzarse en modo `DownloadOnly` para descargar en distintos horarios. Luego se vuelve a lanzar la **misma acción** en modo `Deploy`. Una tarea local sigue trabajando aunque la ejecución de vRx ya haya terminado; al recuperar conexión o encenderse la PC, reintenta las descargas pendientes. También se puede lanzar directamente en modo `Deploy`.
+
+## Instalar el dashboard en Ubuntu
+
+Estos comandos se ejecutan en el **Ubuntu con escritorio gráfico** donde está el repositorio. Si ya lo clonaste, entrá directamente en su carpeta y omití `git clone`.
+
+```bash
+sudo apt update
+sudo apt install -y git python3 python3-tk python3-venv
+git clone https://github.com/nmbenitez/vrx-custom-deploy.git
+cd vrx-custom-deploy
+python3 -m venv .venv
+.venv/bin/python -m pip install -r dashboard/requirements.txt
+```
+
+El directorio de publicación predeterminado es `/srv/packages`. Si este Ubuntu **ya sirve paquetes con Nginx** y tu usuario puede escribir allí, conservá esa configuración. Para preparar un servidor nuevo con los scripts del proyecto:
+
+```bash
+bash ubuntu-server/01-install-nginx.sh
+bash ubuntu-server/05-create-package-repository.sh
+bash ubuntu-server/02-configure-nginx.sh
+```
+
+El último script configura Nginx para servir `/srv/packages` en `http://IP-DEL-UBUNTU/packages/` y sustituye el sitio predeterminado de Nginx. Ejecutá `05-create-package-repository.sh` desde tu usuario de escritorio; el script usa `sudo` internamente para asignarle permisos sobre `/srv/packages`. Squid es opcional para tráfico a Internet y no hace falta para abrir el dashboard.
+
+Abrí la aplicación:
+
+```bash
+.venv/bin/python -m dashboard.desktop
+```
+
+En **Directorio de paquetes**, verificá que diga `/srv/packages` y pulsá **Guardar**. Si querés abrirla desde el menú de Ubuntu, instalá el acceso directo una vez:
+
+```bash
+.venv/bin/python -m dashboard.install_launcher
+```
+
+El acceso directo usa esta carpeta y su `.venv`; si movés el proyecto, volvé a instalarlo. Para actualizar una instalación ya clonada, cerrá la aplicación, ejecutá `git pull` dentro del repositorio y volvé a abrirla.
+
+## Crear y publicar un paquete
+
+Las capturas muestran un **ejemplo ficticio** tomado en Windows. El programa es el mismo en Ubuntu; allí la ruta superior será `/srv/packages`.
+
+### 1. Crear el borrador y cargar archivos
+
+Pulsá **+ Nuevo** e ingresá un nombre único, por ejemplo `demo-oficina-v1`. Ese nombre será el directorio publicado y el valor de `$RemoteFolder` en vRx. Después, en **Archivos**, pulsá **+ Agregar archivos** y elegí los instaladores o scripts que ejecutarán las PC. Para el ejemplo se cargaron un `.exe` y un `.bat`.
+
+![Vista de archivos del paquete de ejemplo](docs/screenshots/01-archivos.png)
+
+### 2. Agregar los pasos en orden
+
+Entrá en **Pasos** y pulsá **+ Agregar paso** por cada acción. Primero debe existir un paquete creado con **+ Nuevo**. La descripción identifica el paso en la lista; el orden se cambia con las flechas.
+
+| Orden | Descripción de ejemplo | Acción | Archivo | Argumentos | Códigos de éxito |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Reinicio inicial | Reiniciar Windows | No requiere | No requiere | No requiere |
+| 2 | Instalar aplicación | Ejecutar EXE | `AplicacionDemo.exe` | `/S` | `0,3010` |
+| 3 | Reinicio final | Reiniciar Windows | No requiere | No requiere | No requiere |
+| 4 | Mensaje final | Ejecutar BAT | `mensaje-final.bat` | Vacío | `0` |
+
+Los argumentos dependen del instalador real; `/S` aquí es solo un ejemplo. El código `3010` significa que el instalador solicita un reinicio. Si el siguiente paso ya es **Reiniciar Windows**, ese paso realiza el reinicio con su aviso configurado.
+
+![Primeros pasos del paquete](docs/screenshots/02-pasos.png)
+
+![Últimos pasos del paquete tras desplazarse por la lista](docs/screenshots/02b-pasos-final.png)
+
+Para un reinicio con aviso, elegí **Reiniciar Windows**, escribí la **cuenta regresiva en segundos** y el **mensaje de reinicio para Windows**. Por ejemplo, `300` significa cinco minutos. Se pueden configurar mensajes distintos para el reinicio inicial y el final. Con `0` y el mensaje vacío, el reinicio es inmediato. El aviso usa el mecanismo de Windows equivalente a `shutdown /r /t 300 /f /c "mensaje"`; al terminar la cuenta regresiva, Windows fuerza el cierre de aplicaciones, con posible pérdida de datos no guardados ([documentación de Microsoft](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/shutdown/)).
+
+![Configuración de un reinicio con cuenta regresiva y mensaje](docs/screenshots/03-reinicio.png)
+
+El aviso de reinicio lo muestra Windows. Un `.bat` ejecutado por el motor como `SYSTEM` no garantiza que su ventana o mensaje final sea visible para el usuario conectado.
+
+### 3. Publicar
+
+Entrá en **Publicar** y comprobá el destino. Pulsá **Publicar paquete**. En Ubuntu, el ejemplo quedaría en:
+
+```text
+/srv/packages/demo-oficina-v1/
+├── AplicacionDemo.exe
+├── mensaje-final.bat
+└── deployment.json
+
+/srv/packages/manifest.txt
+```
+
+![Pantalla de publicación del paquete](docs/screenshots/04-publicar.png)
+
+El paquete publicado queda fijo. Para cambiar archivos o pasos, pulsá **Duplicar**, asigná un nombre nuevo (por ejemplo `demo-oficina-v2`) y publicá esa versión. **Exportar paquete ZIP** crea una copia portátil, pero no la publica automáticamente en `/srv/packages`.
+
+Para comprobar que Nginx sirve el JSON después de publicar:
+
+```bash
+curl -f http://127.0.0.1/packages/demo-oficina-v1/deployment.json
+```
+
+## Lanzar desde vRx
+
+En vRx se carga **una sola acción** con [`windows-client/09-vrx-bootstrap.ps1`](windows-client/09-vrx-bootstrap.ps1). No se genera un bootstrap por paquete. Antes de cada lanzamiento se editan las variables al comienzo de ese mismo script:
+
+```powershell
+$Server = "192.0.2.10"                   # IP o nombre del Ubuntu; normalmente se fija una vez
+$RemoteFolder = "demo-oficina-v1"        # Nombre exacto del paquete publicado
+$BootstrapMode = "DownloadOnly"         # Primera fase: solo descargar y verificar
+```
+
+Lanzá `DownloadOnly` para los grupos y horarios elegidos. Cuando toque instalar, cambiá solo `$BootstrapMode` a `"Deploy"` y ejecutá de nuevo la misma acción. Si elegís `Deploy` desde el principio, descarga lo que falte y luego instala. El bootstrap devuelve el control a vRx enseguida; la tarea local continúa por su cuenta.
+
+Si ya habías cargado una versión anterior del bootstrap en vRx, reemplazá el contenido de esa acción por la versión actual para habilitar los mensajes de reinicio. Esto se hace al actualizar el sistema, **no cada vez que creás un paquete**. Si vRx programa ejecuciones futuras de una misma acción, comprobá si conserva las variables al programarlas o lee su valor al ejecutarlas antes de cambiar `DownloadOnly` a `Deploy`.
+
+## Archivos y verificaciones
 
 | Ruta | Función |
 | --- | --- |
-| `dashboard/` | Aplicación de escritorio para crear y publicar paquetes. [Uso](dashboard/README.md). |
-| `ubuntu-server/` | Nginx, Squid y repositorio de paquetes. |
-| `windows-client/09-vrx-bootstrap.ps1` | Entrada reutilizable para vRx; el operador edita el paquete y el modo en la misma acción antes de lanzarla. Archivo generado desde los scripts modulares. |
-| `windows-client/11-deployment-launch-worker.ps1` | Descarga persistente, verificación y entrega al motor. |
-| `windows-client/06-deployment-engine.ps1` | Ejecución de pasos y estado entre reinicios. |
-| `windows-client/10-vrx-check-status.ps1` | Consulta de estado desde vRx. |
+| `dashboard/` | Editor de escritorio, validación y publicación. |
+| `ubuntu-server/` | Preparación de Nginx, repositorio y proxy opcional. |
+| `windows-client/09-vrx-bootstrap.ps1` | Script único que se carga en vRx. |
+| `windows-client/11-deployment-launch-worker.ps1` | Descarga recuperable y preparación del paquete. |
+| `windows-client/06-deployment-engine.ps1` | Ejecución y continuación entre reinicios. |
+| `tests/capture_readme.py` | Regenera estas capturas con datos ficticios en un equipo con escritorio. |
 
-El editor inicial permite archivos en la raíz del paquete, pasos `reboot`, `exe`, `msi`, `bat`, `ps1` y `vbs`, reordenamiento, duplicación y publicación de versiones con nombres distintos. También se puede probar en Windows con `python -m dashboard.desktop`; allí publica en una carpeta local de prueba. La integración con la API de vRx y el tablero de estado por equipo están pendientes.
+Para verificar cambios de código en un entorno de desarrollo:
 
-## Desarrollo y validación
-
-```text
-python tests/build-bootstrap.py
-python tests/test-package.py
-python -m unittest discover -s tests -p test_dashboard.py
+```bash
+python3 tests/test-package.py
+python3 -m unittest discover -s tests -p test_dashboard.py
 ```
 
-El generador se detiene si faltan fuentes de descarga. La prueba de paquete ejecuta las comprobaciones Bash únicamente cuando Bash está instalado. Las pruebas del editor cubren creación, carga de archivos, publicación, manifiesto, generación del bootstrap y validaciones de datos.
+Las comprobaciones Bash de `test-package.py` se omiten cuando Bash no está disponible. El [plan de pruebas del piloto](documentation/PLAN_PRUEBAS_V03.md) cubre la validación pendiente en Windows.
 
-## Limitaciones del piloto
+## Límites actuales
 
-- El inicio y la continuación de tareas programadas todavía no fueron validados en una VM Windows. Las pruebas Python no sustituyen esa validación.
-- El estado `Completed` indica que terminaron los pasos configurados; no comprueba que el producto quedó instalado.
-- Una interrupción durante un instalador necesita evaluación antes de repetir el paso. No hay garantía de ejecución exactamente una vez.
-- El manifiesto usa SHA-256 para detectar daños, pero HTTP no autentica su origen. Los paquetes y scripts se ejecutan como SYSTEM.
-- Hay un despliegue activo por equipo. La aplicación todavía no ofrece vista de equipos ni invoca la API de vRx.
+- La tarea local y la continuación tras reinicios necesitan pruebas en Windows antes de usarse con los equipos del cliente.
+- `Completed` confirma que terminaron los pasos configurados; todavía no detecta si el producto quedó instalado.
+- Si una PC se apaga durante un instalador, hace falta evaluar ese instalador antes de repetir el paso.
+- Los hashes SHA-256 detectan daños en archivos, pero el HTTP del piloto no autentica su origen. Los scripts se ejecutan como `SYSTEM`.
+- El editor no consulta todavía estados por equipo mediante la API de vRx.
 
-Ver el [plan de pruebas](documentation/PLAN_PRUEBAS_V03.md) para validar el piloto en Windows.
-
-Esta edicion publica omite capturas del tenant y borradores de despliegue especificos del cliente.
+Esta edición pública usa datos y capturas ficticios; no contiene archivos ni configuraciones del cliente.

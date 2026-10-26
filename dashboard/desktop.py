@@ -94,13 +94,16 @@ class StepDialog(ctk.CTkToplevel):
                                     files or ["Sin archivos"])
         self.arguments_entry = self._entry(card, 8, "Argumentos", self.arguments_var)
         self.codes_entry = self._entry(card, 10, "Códigos de éxito", self.codes_var)
+        self.install_widgets = [widget for row in range(6, 12)
+                                for widget in card.grid_slaves(row=row, column=0)]
         self.reboot_fields = ctk.CTkFrame(card, fg_color="transparent")
         self.reboot_fields.grid(row=12, column=0, sticky="ew", padx=24)
         self.reboot_fields.grid_columnconfigure(0, weight=1)
         self._entry(self.reboot_fields, 0, "Cuenta regresiva antes de reiniciar (segundos)", self.reboot_delay_var)
         self._entry(self.reboot_fields, 2, "Mensaje de reinicio para Windows", self.reboot_message_var)
-        ctk.CTkLabel(card, text="Ejemplo: 0,3010. MSI agrega /i y /norestart.",
-                     text_color=MUTED, font=(FONT, 10)).grid(row=13, column=0, sticky="w", padx=24, pady=(5, 12))
+        self.install_hint = ctk.CTkLabel(card, text="Ejemplo: 0,3010. MSI agrega /i y /norestart.",
+                                         text_color=MUTED, font=(FONT, 10))
+        self.install_hint.grid(row=13, column=0, sticky="w", padx=24, pady=(5, 12))
         buttons = ctk.CTkFrame(card, fg_color="transparent")
         buttons.grid(row=14, column=0, sticky="e", padx=24, pady=(0, 20))
         action_button(buttons, "Cancelar", self.destroy, width=104).pack(side="left", padx=(0, 8))
@@ -130,14 +133,18 @@ class StepDialog(ctk.CTkToplevel):
 
     def _toggle_fields(self):
         reboot = TYPE_CODES[self.type_var.get()] == "reboot"
-        state = "disabled" if reboot else "normal"
-        for widget in (self.file_menu, self.arguments_entry, self.codes_entry):
-            widget.configure(state=state)
+        for widget in self.install_widgets:
+            if reboot:
+                widget.grid_remove()
+            else:
+                widget.grid()
         if reboot:
             self.reboot_fields.grid()
-            self.geometry("560x615")
+            self.install_hint.grid_remove()
+            self.geometry("560x475")
         else:
             self.reboot_fields.grid_remove()
+            self.install_hint.grid()
             self.geometry("560x495")
 
     def _save(self):
