@@ -20,7 +20,7 @@ Si un instalador devuelve `3010` y el siguiente paso es **Reiniciar Windows**, e
 
 Para usar esta función en equipos Windows, la acción fija de vRx debe contener la versión actualizada de `windows-client/09-vrx-bootstrap.ps1`; cambiar solo el dashboard en Ubuntu no actualiza el motor ya cargado en vRx.
 
-En vRx se carga una sola vez `windows-client/09-vrx-bootstrap.ps1`. Allí se configura `$Server` una vez. Para cada conjunto publicado, el operador cambia `$RemoteFolder` al nombre del paquete y ejecuta con `$BootstrapMode = "DownloadOnly"` en los grupos y horarios deseados. Cuando corresponda instalar, cambia únicamente `$BootstrapMode = "Deploy"` y vuelve a ejecutar la misma acción. No cambiar el modo de una acción que todavía tenga lanzamientos de descarga pendientes, salvo que vRx confirme que cada programación conserva una copia de sus variables.
+En vRx se carga una sola vez `windows-client/09-vrx-bootstrap.ps1`. Allí se configuran `$Server` y `$DownloadRoot` (carpeta local de las PC Windows, predeterminada `C:\Infrastructure\Packages`). Para cada conjunto publicado, el operador cambia `$RemoteFolder` al nombre del paquete y ejecuta con `$BootstrapMode = "DownloadOnly"` en los grupos y horarios deseados. Cuando corresponda instalar, cambia únicamente `$BootstrapMode = "Deploy"` y vuelve a ejecutar la misma acción. `$DownloadRoot` debe conservar el mismo valor entre ambas fases para ese paquete. No cambiar el modo de una acción que todavía tenga lanzamientos de descarga pendientes, salvo que vRx confirme que cada programación conserva una copia de sus variables.
 
 El operador no necesita editar parámetros de descarga ni reintentos: sus valores están definidos en `windows-client/00-config.ps1` dentro del bootstrap.
 

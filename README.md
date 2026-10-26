@@ -121,9 +121,10 @@ En vRx se carga **una sola acción** con [`windows-client/09-vrx-bootstrap.ps1`]
 $Server = "192.0.2.10"                   # IP o nombre del Ubuntu; normalmente se fija una vez
 $RemoteFolder = "demo-oficina-v1"        # Nombre exacto del paquete publicado
 $BootstrapMode = "DownloadOnly"         # Primera fase: solo descargar y verificar
+$DownloadRoot = "C:\Infrastructure\Packages" # Carpeta local en cada PC Windows
 ```
 
-Estas son las únicas variables que cambia el operador. El método de descarga, el uso de proxy y los reintentos ya tienen valores internos predeterminados.
+Estas son las variables que puede cambiar el operador. Los archivos del paquete se guardan en `$DownloadRoot\<nombre-del-paquete>`, por ejemplo `C:\Infrastructure\Packages\demo-oficina-v1`. Usá la misma ruta en las fases `DownloadOnly` y `Deploy`; el bootstrap rechaza una ruta distinta para un paquete ya preparado. El método de descarga, el uso de proxy y los reintentos ya tienen valores internos predeterminados.
 
 Lanzá `DownloadOnly` para los grupos y horarios elegidos. Cuando toque instalar, cambiá solo `$BootstrapMode` a `"Deploy"` y ejecutá de nuevo la misma acción. Si elegís `Deploy` desde el principio, descarga lo que falte y luego instala. El bootstrap devuelve el control a vRx enseguida; la tarea local continúa por su cuenta.
 

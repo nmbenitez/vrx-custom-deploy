@@ -5,8 +5,9 @@
 $Server = ""                          # Set the Ubuntu address once in vRx
 $RemoteFolder = ""                    # Set the published package for this launch
 $BootstrapMode = "DownloadOnly"       # DownloadOnly first, Deploy later
+$DownloadRoot = "C:\Infrastructure\Packages" # Local folder for verified package files
 
-# Internal paths. Download and retry defaults live in 00-config.ps1.
+# Internal paths and retry defaults live in 00-config.ps1.
 $EngineRoot = "C:\ProgramData\vRxDeploy"
 $BootstrapRoot = "C:\ProgramData\vRxDeploy\bootstrap-v024"
 
@@ -28,6 +29,7 @@ try {
     if ($Server -notmatch '^[A-Za-z0-9.:-]+$') { throw 'Set a valid $Server in the vRx script.' }
     if ($RemoteFolder -notmatch '^[A-Za-z0-9_-][A-Za-z0-9_.-]*$') { throw 'Set $RemoteFolder to a published package name in the vRx script.' }
     if ($BootstrapMode -notin @('DownloadOnly','Deploy')) { throw 'Invalid bootstrap mode.' }
+    if ($DownloadRoot -notmatch '^[A-Za-z]:\\' -or $DownloadRoot -match '["\r\n]') { throw 'Set $DownloadRoot to an absolute local Windows path, such as C:\Infrastructure\Packages.' }
 
     # Prevent overlapping bootstrap executions and destructive redeployment of a live package.
     $BootstrapMutex = New-Object System.Threading.Mutex($false, 'Global\vRxDeploymentBootstrap')
@@ -81,6 +83,8 @@ try {
         }
         if ($ExistingReceipt.Package -ne $RemoteFolder) { throw 'Launch receipt belongs to a different package.' }
         if ($ExistingReceipt.Server -and $ExistingReceipt.Server -ne $Server) { throw 'The staged package belongs to a different server.' }
+        $ExistingDownloadRoot = if ($ExistingReceipt.DownloadRoot) { [string]$ExistingReceipt.DownloadRoot } else { 'C:\Infrastructure\Packages' }
+        if ($ExistingDownloadRoot.TrimEnd('\') -ne $DownloadRoot.TrimEnd('\')) { throw 'The staged package uses a different $DownloadRoot. Keep the same path for DownloadOnly and Deploy.' }
         $ExistingMode = if (Test-Path -LiteralPath $ModePath -PathType Leaf) {
             (Get-Content -LiteralPath $ModePath -Raw -Encoding ASCII).Trim()
         } elseif ($ExistingReceipt.RequestedMode) { [string]$ExistingReceipt.RequestedMode } else { 'Deploy' }
@@ -393,9 +397,10 @@ AAAAAAAAALaBL0UAAGRlcGxveS5wczFQSwUGAAAAAA8ADwAKBAAA3EoAAAAA
     $OverrideText = @(
         ('$Server = "{0}"' -f $Server),
         ('$RemoteFolder = "{0}"' -f $RemoteFolder),
+        ('$DownloadRoot = ''{0}''' -f $DownloadRoot.Replace("'", "''")),
         '$ProxyServer = $Server'
     ) -join "`r`n"
-    Set-Content -LiteralPath (Join-Path $Extracted '00-local-settings.ps1') -Value $OverrideText -Encoding ASCII
+    Set-Content -LiteralPath (Join-Path $Extracted '00-local-settings.ps1') -Value $OverrideText -Encoding UTF8
 
     # The worker and its retries are registered BEFORE any network transfer.
     $PowerShellExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
@@ -415,6 +420,7 @@ AAAAAAAAALaBL0UAAGRlcGxveS5wczFQSwUGAAAAAA8ADwAKBAAA3EoAAAAA
     $Receipt = [pscustomobject]@{
         Package = $RemoteFolder
         Server = $Server
+        DownloadRoot = $DownloadRoot
         RequestedMode = $BootstrapMode
         Status = 'Queued'
         TaskName = $TaskName
@@ -445,6 +451,7 @@ AAAAAAAAALaBL0UAAGRlcGxveS5wczFQSwUGAAAAAA8ADwAKBAAA3EoAAAAA
             $FailedReceipt = [pscustomobject]@{
                 Package = $RemoteFolder
                 Server = $Server
+                DownloadRoot = $DownloadRoot
                 RequestedMode = $BootstrapMode
                 Status = 'Failed'
                 TaskName = $TaskName

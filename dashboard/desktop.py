@@ -80,8 +80,8 @@ class StepDialog(ctk.CTkToplevel):
         self.reboot_delay_var = tk.StringVar(value=str(existing.get("rebootDelaySeconds", 0)))
         self.reboot_message_var = tk.StringVar(value=existing.get("rebootMessage", ""))
 
-        card = ctk.CTkFrame(self, fg_color=CARD, corner_radius=18)
-        card.pack(fill="both", expand=True, padx=18, pady=18)
+        card = ctk.CTkScrollableFrame(self, fg_color=CARD, corner_radius=18)
+        card.pack(fill="both", expand=True, padx=18, pady=(18, 0))
         card.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(card, text="CONFIGURAR PASO", text_color=ACCENT,
                      font=(FONT, 11, "bold")).grid(row=0, column=0, sticky="w", padx=24, pady=(20, 2))
@@ -104,10 +104,11 @@ class StepDialog(ctk.CTkToplevel):
         self.install_hint = ctk.CTkLabel(card, text="Ejemplo: 0,3010. MSI agrega /i y /norestart.",
                                          text_color=MUTED, font=(FONT, 10))
         self.install_hint.grid(row=13, column=0, sticky="w", padx=24, pady=(5, 12))
-        buttons = ctk.CTkFrame(card, fg_color="transparent")
-        buttons.grid(row=14, column=0, sticky="e", padx=24, pady=(0, 20))
+        buttons = ctk.CTkFrame(self, fg_color="transparent")
+        buttons.pack(fill="x", padx=18, pady=(8, 18))
         action_button(buttons, "Cancelar", self.destroy, width=104).pack(side="left", padx=(0, 8))
-        action_button(buttons, "Guardar paso", self._save, primary=True, width=130).pack(side="left")
+        self.save_button = action_button(buttons, "Guardar paso", self._save, primary=True, width=130)
+        self.save_button.pack(side="right")
         self._toggle_fields()
         self.after(30, self.grab_set)
         self.after(50, self.label_entry.focus_set)

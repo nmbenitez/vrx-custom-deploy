@@ -48,6 +48,10 @@ assert "-RepetitionInterval (New-TimeSpan -Minutes 15)" in bootstrap
 assert '$Server = ""' in bootstrap
 assert '$RemoteFolder = ""' in bootstrap
 assert '$BootstrapMode = "DownloadOnly"' in bootstrap
+assert '$DownloadRoot = "C:\\Infrastructure\\Packages"' in bootstrap
+assert "('$DownloadRoot = ''{0}''' -f $DownloadRoot.Replace(\"'\", \"''\"))" in bootstrap
+assert "if ($ExistingReceipt.DownloadRoot)" in bootstrap
+assert 'DownloadRoot = $DownloadRoot' in bootstrap
 operator_section = bootstrap.split('# Queue persistent download or installation', 1)[0]
 for internal_setting in ('DownloadMethod', 'CurlBypassProxy', 'CurlRetryCount',
                          'CurlConnectTimeoutSeconds', 'CurlMaxTimeSeconds', 'DownloadAttempts'):
