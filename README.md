@@ -121,6 +121,8 @@ $RemoteFolder = "demo-oficina-v1"        # Nombre exacto del paquete publicado
 $BootstrapMode = "DownloadOnly"         # Primera fase: solo descargar y verificar
 ```
 
+Estas son las únicas variables que cambia el operador. El método de descarga, el uso de proxy y los reintentos ya tienen valores internos predeterminados.
+
 Lanzá `DownloadOnly` para los grupos y horarios elegidos. Cuando toque instalar, cambiá solo `$BootstrapMode` a `"Deploy"` y ejecutá de nuevo la misma acción. Si elegís `Deploy` desde el principio, descarga lo que falte y luego instala. El bootstrap devuelve el control a vRx enseguida; la tarea local continúa por su cuenta.
 
 Si ya habías cargado una versión anterior del bootstrap en vRx, reemplazá el contenido de esa acción por la versión actual para habilitar los mensajes de reinicio. Esto se hace al actualizar el sistema, **no cada vez que creás un paquete**. Si vRx programa ejecuciones futuras de una misma acción, comprobá si conserva las variables al programarlas o lee su valor al ejecutarlas antes de cambiar `DownloadOnly` a `Deploy`.

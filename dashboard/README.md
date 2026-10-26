@@ -22,6 +22,8 @@ Para usar esta función en equipos Windows, la acción fija de vRx debe contener
 
 En vRx se carga una sola vez `windows-client/09-vrx-bootstrap.ps1`. Allí se configura `$Server` una vez. Para cada conjunto publicado, el operador cambia `$RemoteFolder` al nombre del paquete y ejecuta con `$BootstrapMode = "DownloadOnly"` en los grupos y horarios deseados. Cuando corresponda instalar, cambia únicamente `$BootstrapMode = "Deploy"` y vuelve a ejecutar la misma acción. No cambiar el modo de una acción que todavía tenga lanzamientos de descarga pendientes, salvo que vRx confirme que cada programación conserva una copia de sus variables.
 
+El operador no necesita editar parámetros de descarga ni reintentos: sus valores están definidos en `windows-client/00-config.ps1` dentro del bootstrap.
+
 El directorio `/srv/packages` debe ser local al equipo donde se usa la aplicación. Si el Ubuntu con escritorio es distinto del servidor que aloja Nginx, montar allí el repositorio de paquetes o transferir el ZIP exportado y regenerar el manifiesto en el servidor.
 
 ## Probar en Windows

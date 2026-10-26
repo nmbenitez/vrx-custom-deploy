@@ -48,6 +48,10 @@ assert "-RepetitionInterval (New-TimeSpan -Minutes 15)" in bootstrap
 assert '$Server = ""' in bootstrap
 assert '$RemoteFolder = ""' in bootstrap
 assert '$BootstrapMode = "DownloadOnly"' in bootstrap
+operator_section = bootstrap.split('# Queue persistent download or installation', 1)[0]
+for internal_setting in ('DownloadMethod', 'CurlBypassProxy', 'CurlRetryCount',
+                         'CurlConnectTimeoutSeconds', 'CurlMaxTimeSeconds', 'DownloadAttempts'):
+    assert '$' + internal_setting + ' =' not in operator_section
 assert "if ($BootstrapMode -eq 'DownloadOnly')" in bootstrap
 assert "DEPLOY_QUEUED:" in bootstrap
 assert "$ModePath = Join-Path $StateDir 'requested-mode.txt'" in bootstrap

@@ -1,19 +1,14 @@
 #Requires -Version 5.1
 # ============================================
-# Configuration - edit the same script stored in vRx before each launch
+# Operator settings in the single action stored in vRx
 # ============================================
 $Server = ""                          # Set the Ubuntu address once in vRx
 $RemoteFolder = ""                    # Set the published package for this launch
 $BootstrapMode = "DownloadOnly"       # DownloadOnly first, Deploy later
+
+# Internal paths. Download and retry defaults live in 00-config.ps1.
 $EngineRoot = "C:\ProgramData\vRxDeploy"
 $BootstrapRoot = "C:\ProgramData\vRxDeploy\bootstrap-v024"
-# Download settings are forwarded to 00-config.ps1 through 00-local-settings.ps1.
-$DownloadMethod = "Auto"           # Auto, Curl, InvokeWebRequest
-$CurlBypassProxy = $true
-$CurlRetryCount = 2
-$CurlConnectTimeoutSeconds = 15
-$CurlMaxTimeSeconds = 0
-$DownloadAttempts = 2
 
 # ============================================
 # Queue persistent download or installation; return immediately to vRx
@@ -378,13 +373,7 @@ AAAAAA8ADwAKBAAA4EkAAAAA
     $OverrideText = @(
         ('$Server = "{0}"' -f $Server),
         ('$RemoteFolder = "{0}"' -f $RemoteFolder),
-        '$ProxyServer = $Server',
-        ('$DownloadMethod = "{0}"' -f $DownloadMethod),
-        ('$CurlBypassProxy = $' + $CurlBypassProxy.ToString().ToLowerInvariant()),
-        ('$CurlRetryCount = {0}' -f $CurlRetryCount),
-        ('$CurlConnectTimeoutSeconds = {0}' -f $CurlConnectTimeoutSeconds),
-        ('$CurlMaxTimeSeconds = {0}' -f $CurlMaxTimeSeconds),
-        ('$DownloadAttempts = {0}' -f $DownloadAttempts)
+        '$ProxyServer = $Server'
     ) -join "`r`n"
     Set-Content -LiteralPath (Join-Path $Extracted '00-local-settings.ps1') -Value $OverrideText -Encoding ASCII
 
