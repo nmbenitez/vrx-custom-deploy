@@ -47,6 +47,81 @@ function Check-PackageSnapshot {
     }
 }
 
+function Send-UserMessage {
+    param([string]$Message, [int]$DurationSeconds)
+    if ([string]::IsNullOrWhiteSpace($Message) -or $Message.Length -gt 512 -or $Message -match '[\x00-\x09\x0B-\x1F]') {
+        throw 'Invalid message text.'
+    }
+    if ($DurationSeconds -lt 1 -or $DurationSeconds -gt 3600) { throw 'Invalid message duration.' }
+
+    if (-not ('VrxSessionMessage' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public static class VrxSessionMessage {
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SessionInfo {
+        public int SessionId;
+        public IntPtr StationName;
+        public int State;
+    }
+
+    [DllImport("wtsapi32.dll", EntryPoint = "WTSEnumerateSessionsW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnumerateSessions(IntPtr server, int reserved, int version,
+        out IntPtr sessions, out int count);
+
+    [DllImport("wtsapi32.dll", EntryPoint = "WTSFreeMemory")]
+    private static extern void FreeMemory(IntPtr pointer);
+
+    [DllImport("wtsapi32.dll", EntryPoint = "WTSSendMessageW", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SendMessage(IntPtr server, int sessionId, string title, int titleBytes,
+        string message, int messageBytes, int style, int timeout, out int response,
+        [MarshalAs(UnmanagedType.Bool)] bool wait);
+
+    public static int Send(string message, int seconds) {
+        IntPtr sessions = IntPtr.Zero;
+        int count;
+        if (!EnumerateSessions(IntPtr.Zero, 0, 1, out sessions, out count))
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot list Windows user sessions.");
+        int active = 0;
+        int sent = 0;
+        int firstError = 0;
+        string title = "vRx - Aviso";
+        try {
+            int size = Marshal.SizeOf(typeof(SessionInfo));
+            for (int i = 0; i < count; i++) {
+                IntPtr address = new IntPtr(sessions.ToInt64() + (long)i * size);
+                SessionInfo session = (SessionInfo)Marshal.PtrToStructure(address, typeof(SessionInfo));
+                if (session.SessionId == 0 || session.State != 0) continue; // WTSActive
+                active++;
+                int response;
+                if (SendMessage(IntPtr.Zero, session.SessionId, title, Encoding.Unicode.GetByteCount(title),
+                    message, Encoding.Unicode.GetByteCount(message), 0, seconds, out response, false)) {
+                    sent++;
+                } else if (firstError == 0) {
+                    firstError = Marshal.GetLastWin32Error();
+                }
+            }
+        } finally {
+            if (sessions != IntPtr.Zero) FreeMemory(sessions);
+        }
+        if (sent == 0) {
+            if (active == 0) throw new InvalidOperationException("No active user session for message step.");
+            throw new Win32Exception(firstError, "Could not show the message to an active user session.");
+        }
+        return sent;
+    }
+}
+'@
+    }
+    return [VrxSessionMessage]::Send($Message, $DurationSeconds)
+}
+
 # ============================================
 # Initialize and execute
 # ============================================
@@ -67,8 +142,8 @@ try {
     foreach ($Step in $Steps) {
         if ([string]::IsNullOrWhiteSpace($Step.id) -or $Ids.ContainsKey([string]$Step.id)) { throw 'Missing or duplicate step ID.' }
         $Ids[[string]$Step.id] = $true
-        if ($Step.type -notin @('reboot','exe','msi','bat','ps1','vbs')) { throw "Unsupported step type: $($Step.type)" }
-        if ($Step.type -ne 'reboot') { $null = Resolve-StepFile }
+        if ($Step.type -notin @('reboot','message','exe','msi','bat','ps1','vbs')) { throw "Unsupported step type: $($Step.type)" }
+        if ($Step.type -notin @('reboot','message')) { $null = Resolve-StepFile }
     }
     $Fingerprint = (Get-FileHash -LiteralPath $DeploymentFile -Algorithm SHA256).Hash
 
@@ -122,6 +197,22 @@ try {
             Write-DeploymentLog
             Request-ManagedReboot -DelaySeconds $RebootDelay -Message $RebootMessage
             exit 0
+        }
+
+        if ($Step.type -eq 'message') {
+            $DurationSeconds = 60
+            if ($null -ne $Step.messageDurationSeconds -and
+                -not [int]::TryParse([string]$Step.messageDurationSeconds, [ref]$DurationSeconds)) {
+                throw "Invalid message duration in step $($Step.id)."
+            }
+            $SessionCount = Send-UserMessage -Message ([string]$Step.messageText) -DurationSeconds $DurationSeconds
+            $State.NextStep = $Index + 1
+            $State.LastExitCode = 0
+            $State.UpdatedAt = (Get-Date).ToUniversalTime().ToString('o')
+            Save-DeploymentState
+            $LogMessage = "Message step $($Step.id) sent to $SessionCount active session(s)."
+            Write-DeploymentLog
+            continue
         }
 
         $ExecutableFile = Resolve-StepFile

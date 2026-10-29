@@ -6,6 +6,7 @@ import hashlib
 import json
 import unittest
 import zipfile
+from unittest.mock import patch
 
 from dashboard.publisher import validate_definition
 from dashboard.service import PackageService
@@ -71,6 +72,52 @@ class DesktopPublicationTests(unittest.TestCase):
             definition = json.loads(archive.read("portable/deployment.json"))
             self.assertEqual(definition["name"], "portable")
 
+    def test_delete_draft_and_published_package(self):
+        self.service.create("draft-only")
+        self.service.delete("draft-only")
+        self.assertNotIn("draft-only", self.service.drafts())
+
+        for name in ("remove-me", "keep-me"):
+            self.service.create(name)
+            self.service.set_step(name, {"id": "reboot", "type": "reboot"})
+            self.service.publish(name)
+        self.service.delete("remove-me")
+
+        self.assertNotIn("remove-me", self.service.drafts())
+        self.assertFalse((self.packages / "remove-me").exists())
+        self.assertEqual(self.service.published(), ["keep-me"])
+        manifest = (self.packages / "manifest.txt").read_text(encoding="utf-8")
+        self.assertNotIn("remove-me/", manifest)
+        self.assertIn("keep-me/deployment.json|", manifest)
+        with self.assertRaises(ValueError):
+            self.service.delete("../outside")
+
+    def test_delete_restores_publication_if_manifest_fails(self):
+        self.service.create("demo")
+        self.service.set_step("demo", {"id": "reboot", "type": "reboot"})
+        self.service.publish("demo")
+        original = (self.packages / "manifest.txt").read_text(encoding="utf-8")
+
+        with patch("dashboard.service.generate_manifest", side_effect=OSError("manifest unavailable")):
+            with self.assertRaises(OSError):
+                self.service.delete("demo")
+
+        self.assertIn("demo", self.service.drafts())
+        self.assertTrue((self.packages / "demo" / "deployment.json").is_file())
+        self.assertEqual((self.packages / "manifest.txt").read_text(encoding="utf-8"), original)
+
+    def test_delete_preserves_unrelated_folder_with_same_name(self):
+        self.service.create("demo")
+        unrelated = self.packages / "demo"
+        unrelated.mkdir(parents=True)
+        (unrelated / "notes.txt").write_text("keep", encoding="utf-8")
+
+        with self.assertRaises(ValueError):
+            self.service.delete("demo")
+
+        self.assertIn("demo", self.service.drafts())
+        self.assertEqual((unrelated / "notes.txt").read_text(encoding="utf-8"), "keep")
+
     def test_reboot_warning_is_published_and_validated(self):
         self.service.create("reboot-demo")
         self.service.set_step("reboot-demo", {
@@ -89,6 +136,28 @@ class DesktopPublicationTests(unittest.TestCase):
                 self.service.set_step("invalid-reboot", {
                     "id": "reboot", "type": "reboot",
                     "rebootDelaySeconds": delay, "rebootMessage": message,
+                })
+
+    def test_message_step_needs_no_file_and_validates_text_and_duration(self):
+        self.service.create("notice-demo")
+        self.service.set_step("notice-demo", {
+            "id": "notice", "type": "message", "label": "Avisar al usuario",
+            "messageText": "La actualización comenzará en breve.\nGuardá tu trabajo.",
+            "messageDurationSeconds": 90,
+        })
+        self.service.publish("notice-demo")
+        definition = json.loads((self.packages / "notice-demo" / "deployment.json").read_text(encoding="utf-8"))
+        step = definition["steps"][0]
+        self.assertEqual(step["messageText"], "La actualización comenzará en breve.\nGuardá tu trabajo.")
+        self.assertEqual(step["messageDurationSeconds"], 90)
+        self.assertNotIn("file", step)
+
+        self.service.create("invalid-notice")
+        for message, duration in (("", 60), ("Aviso", 0), ("Aviso", 3601), ("Hola\t", 60)):
+            with self.assertRaises(ValueError):
+                self.service.set_step("invalid-notice", {
+                    "id": "notice", "type": "message",
+                    "messageText": message, "messageDurationSeconds": duration,
                 })
 
 

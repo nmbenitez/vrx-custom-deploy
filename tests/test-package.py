@@ -82,6 +82,17 @@ assert 'ManifestSnapshot' in folder and 'ResumePartialDownload = $true' in folde
 engine = read_text(windows / '06-deployment-engine.ps1')
 assert engine.count('Remove-LaunchTask') >= 3
 assert "if ($State.Status -eq 'Completed')" in engine
+assert "if ($Step.type -eq 'message')" in engine
+assert "Send-UserMessage -Message ([string]$Step.messageText)" in engine
+assert "if ($Step.type -notin @('reboot','message'))" in engine
+if shutil.which('powershell'):
+    source = engine.split("Add-Type -TypeDefinition @'\n", 1)[1].split("\n'@", 1)[0]
+    encoded = base64.b64encode(source.encode('utf-8')).decode('ascii')
+    compile_command = (
+        "$source = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + encoded + "')); "
+        "Add-Type -TypeDefinition $source -ErrorAction Stop"
+    )
+    subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command', compile_command], check=True)
 reboot_manager = read_text(windows / '07-reboot-manager.ps1')
 assert 'Unregister-ScheduledTask -TaskName $TaskName' in reboot_manager
 assert 'Unregister-ScheduledTask -TaskName $LaunchTaskName' in reboot_manager

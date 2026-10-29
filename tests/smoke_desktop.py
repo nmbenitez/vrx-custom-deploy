@@ -23,6 +23,10 @@ def main():
             app.service.set_step("demo", {
                 "id": "install", "label": "Instalar demo", "type": "msi", "file": "setup.msi",
             })
+            app.service.set_step("demo", {
+                "id": "notice", "label": "Avisar al usuario", "type": "message",
+                "messageText": "Actualización en curso", "messageDurationSeconds": 60,
+            })
             app.refresh()
             for section in ("Archivos", "Pasos", "Publicar", "Archivos", "Publicar"):
                 app.show_tab(section)

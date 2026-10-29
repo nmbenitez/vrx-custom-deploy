@@ -12,6 +12,7 @@ import unicodedata
 import customtkinter as ctk
 from PIL import Image
 
+from .publisher import validate_message_options
 from .service import PackageService
 
 
@@ -33,6 +34,7 @@ FONT = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
 TYPE_NAMES = {
     "msi": "Instalar MSI", "exe": "Ejecutar EXE", "bat": "Ejecutar BAT",
     "ps1": "Ejecutar PowerShell", "vbs": "Ejecutar VBS", "reboot": "Reiniciar Windows",
+    "message": "Mostrar mensaje",
 }
 TYPE_CODES = {label: code for code, label in TYPE_NAMES.items()}
 
@@ -79,6 +81,7 @@ class StepDialog(ctk.CTkToplevel):
         self.codes_var = tk.StringVar(value=",".join(map(str, existing.get("successCodes", [0, 3010]))))
         self.reboot_delay_var = tk.StringVar(value=str(existing.get("rebootDelaySeconds", 0)))
         self.reboot_message_var = tk.StringVar(value=existing.get("rebootMessage", ""))
+        self.message_duration_var = tk.StringVar(value=str(existing.get("messageDurationSeconds", 60)))
 
         card = ctk.CTkScrollableFrame(self, fg_color=CARD, corner_radius=18)
         card.pack(fill="both", expand=True, padx=18, pady=(18, 0))
@@ -101,6 +104,19 @@ class StepDialog(ctk.CTkToplevel):
         self.reboot_fields.grid_columnconfigure(0, weight=1)
         self._entry(self.reboot_fields, 0, "Cuenta regresiva antes de reiniciar (segundos)", self.reboot_delay_var)
         self._entry(self.reboot_fields, 2, "Mensaje de reinicio para Windows", self.reboot_message_var)
+        self.message_fields = ctk.CTkFrame(card, fg_color="transparent")
+        self.message_fields.grid(row=12, column=0, sticky="ew", padx=24)
+        self.message_fields.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(self.message_fields, text="Texto del mensaje", text_color=MUTED,
+                     font=(FONT, 11)).grid(row=0, column=0, sticky="w", padx=24)
+        self.message_text = ctk.CTkTextbox(self.message_fields, height=85, corner_radius=9,
+                                            fg_color=SURFACE, border_color=BORDER, border_width=1,
+                                            text_color=TEXT, font=(FONT, 12), wrap="word")
+        self.message_text.grid(row=1, column=0, sticky="ew", padx=24, pady=(2, 9))
+        self.message_text.insert("1.0", existing.get("messageText", ""))
+        self._entry(self.message_fields, 2, "Visible durante (segundos)", self.message_duration_var)
+        ctk.CTkLabel(self.message_fields, text="Se muestra a los usuarios conectados; la secuencia continúa.",
+                     text_color=MUTED, font=(FONT, 10)).grid(row=4, column=0, sticky="w", padx=24)
         self.install_hint = ctk.CTkLabel(card, text="Ejemplo: 0,3010. MSI agrega /i y /norestart.",
                                          text_color=MUTED, font=(FONT, 10))
         self.install_hint.grid(row=13, column=0, sticky="w", padx=24, pady=(5, 12))
@@ -133,18 +149,25 @@ class StepDialog(ctk.CTkToplevel):
         return widget
 
     def _toggle_fields(self):
-        reboot = TYPE_CODES[self.type_var.get()] == "reboot"
+        kind = TYPE_CODES[self.type_var.get()]
         for widget in self.install_widgets:
-            if reboot:
+            if kind in ("reboot", "message"):
                 widget.grid_remove()
             else:
                 widget.grid()
-        if reboot:
+        if kind == "reboot":
             self.reboot_fields.grid()
+            self.message_fields.grid_remove()
             self.install_hint.grid_remove()
             self.geometry("560x475")
+        elif kind == "message":
+            self.reboot_fields.grid_remove()
+            self.message_fields.grid()
+            self.install_hint.grid_remove()
+            self.geometry("560x525")
         else:
             self.reboot_fields.grid_remove()
+            self.message_fields.grid_remove()
             self.install_hint.grid()
             self.geometry("560x495")
 
@@ -169,6 +192,17 @@ class StepDialog(ctk.CTkToplevel):
                 messagebox.showerror("Reinicio inválido", "Usá una cuenta regresiva mayor que cero para mostrar el mensaje.", parent=self)
                 return
             step.update(rebootDelaySeconds=delay, rebootMessage=message)
+        elif step["type"] == "message":
+            try:
+                duration = int(self.message_duration_var.get().strip())
+                message, duration = validate_message_options({
+                    "messageText": self.message_text.get("1.0", "end-1c"),
+                    "messageDurationSeconds": duration,
+                })
+            except ValueError as error:
+                messagebox.showerror("Aviso inválido", str(error), parent=self)
+                return
+            step.update(messageText=message, messageDurationSeconds=duration)
         else:
             if self.file_var.get() == "Sin archivos":
                 messagebox.showerror("Paso incompleto", "Primero cargá un archivo.", parent=self)
@@ -297,6 +331,9 @@ class VrxDesktop(ctk.CTk):
                       width=96).grid(row=0, column=0, sticky="ew", padx=(0, 5))
         action_button(controls, "Duplicar", self.duplicate_draft,
                       width=96).grid(row=0, column=1, sticky="ew", padx=(5, 0))
+        self.delete_button = action_button(controls, "Eliminar paquete", self.delete_package)
+        self.delete_button.configure(fg_color="#693444", hover_color="#854053")
+        self.delete_button.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(10, 0))
 
     def _build_workspace(self, parent):
         workspace = ctk.CTkFrame(parent, fg_color=CARD, corner_radius=18,
@@ -501,6 +538,7 @@ class VrxDesktop(ctk.CTk):
         self._show_scrollbar(self.draft_list, bool(names))
         if self.selected_name not in names:
             self.selected_name = names[0] if names else None
+        self.delete_button.configure(state="normal" if self.selected_name else "disabled")
         for child in self.draft_list.winfo_children():
             child.destroy()
         if not names:
@@ -581,6 +619,8 @@ class VrxDesktop(ctk.CTk):
             detail = TYPE_NAMES[step["type"]] + (f"  ·  {step['file']}" if step.get("file") else "")
             if step["type"] == "reboot" and step.get("rebootDelaySeconds", 0):
                 detail += f"  ·  {step['rebootDelaySeconds']} s"
+            if step["type"] == "message":
+                detail += f"  ·  {step.get('messageDurationSeconds', 60)} s"
             ctk.CTkLabel(row, text=detail, text_color=MUTED, font=(FONT, 10)).grid(
                 row=1, column=1, sticky="nw", pady=(0, 8))
             controls = ctk.CTkFrame(row, fg_color="transparent")
@@ -629,6 +669,27 @@ class VrxDesktop(ctk.CTk):
             self.refresh()
         except Exception as error:
             self._error(error)
+
+    def delete_package(self):
+        if self.busy or not self.selected_name:
+            return
+        name = self.selected_name
+        is_published = name in self.service.published()
+        detail = ("Se eliminarán el borrador, la carpeta publicada y su registro en manifest.txt."
+                  if is_published else "Se eliminará la carpeta del borrador.")
+        if not messagebox.askyesno(
+            "Eliminar automatización",
+            f"¿Eliminar permanentemente '{name}'?\n\n{detail}",
+            parent=self,
+        ):
+            return
+        service = self.service
+
+        def success(_result):
+            self.selected_name = None
+            return f"Paquete eliminado: {name}"
+
+        self._run_background("Eliminando paquete…", lambda: service.delete(name), success)
 
     def add_files(self):
         if not self.selected_name:

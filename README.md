@@ -80,6 +80,8 @@ Entrá en **Pasos** y pulsá **+ Agregar paso** por cada acción. Primero debe e
 
 Los argumentos dependen del instalador real; `/S` aquí es solo un ejemplo. El código `3010` significa que el instalador solicita un reinicio. Si el siguiente paso ya es **Reiniciar Windows**, ese paso realiza el reinicio con su aviso configurado.
 
+También podés elegir **Mostrar mensaje** para sumar un aviso emergente como paso independiente, por ejemplo antes de instalar o al finalizar. No requiere archivo: configurás el texto y los segundos que quedará visible. El despliegue continúa sin esperar que el usuario cierre el aviso; si no hay una sesión activa, ese paso falla.
+
 ![Primeros pasos del paquete](docs/screenshots/02-pasos.png)
 
 ![Últimos pasos del paquete tras desplazarse por la lista](docs/screenshots/02b-pasos-final.png)
@@ -128,7 +130,7 @@ Estas son las variables que puede cambiar el operador. Los archivos del paquete 
 
 Lanzá `DownloadOnly` para los grupos y horarios elegidos. Cuando toque instalar, cambiá solo `$BootstrapMode` a `"Deploy"` y ejecutá de nuevo la misma acción. Si elegís `Deploy` desde el principio, descarga lo que falte y luego instala. El bootstrap devuelve el control a vRx enseguida; la tarea local continúa por su cuenta.
 
-Si ya habías cargado una versión anterior del bootstrap en vRx, reemplazá el contenido de esa acción por la versión actual para habilitar los mensajes de reinicio. Esto se hace al actualizar el sistema, **no cada vez que creás un paquete**. Si vRx programa ejecuciones futuras de una misma acción, comprobá si conserva las variables al programarlas o lee su valor al ejecutarlas antes de cambiar `DownloadOnly` a `Deploy`.
+Si ya habías cargado una versión anterior del bootstrap en vRx, reemplazá el contenido de esa acción por la versión actual para habilitar el paso **Mostrar mensaje**. Esto se hace al actualizar el sistema, **no cada vez que creás un paquete**. Si vRx programa ejecuciones futuras de una misma acción, comprobá si conserva las variables al programarlas o lee su valor al ejecutarlas antes de cambiar `DownloadOnly` a `Deploy`.
 
 ## Archivos y verificaciones
 

@@ -9,7 +9,8 @@ import zipfile
 
 from .publisher import (
     EXTENSIONS, TYPES, draft_path, file_name, load_draft, package_name,
-    publish, save_draft, validate_definition, validate_reboot_options,
+    generate_manifest, publication_lock, publish, save_draft,
+    validate_definition, validate_message_options, validate_reboot_options,
 )
 
 
@@ -29,6 +30,31 @@ class PackageService:
         return sorted(path.name for path in self.package_root.iterdir()
                       if path.is_dir() and not path.name.startswith(".")
                       and (path / "deployment.json").is_file())
+
+    def delete(self, name):
+        """Remove a draft and its publication, then update the repository manifest."""
+        name = package_name(name)
+        draft = draft_path(self.data_root, name)
+        published = self.package_root / name
+        if draft.is_symlink() or published.is_symlink():
+            raise ValueError("No se puede eliminar un paquete enlazado simbólicamente.")
+        if published.exists() and not (published.is_dir() and (published / "deployment.json").is_file()):
+            raise ValueError("La carpeta de destino no es un paquete publicado por el dashboard.")
+        if not draft.is_dir() and not published.is_dir():
+            raise ValueError("La automatización ya no existe.")
+        if published.is_dir():
+            with publication_lock(self.package_root):
+                with tempfile.TemporaryDirectory(prefix=".vrx-deleting-", dir=self.package_root) as staging:
+                    hidden = Path(staging) / name
+                    os.replace(published, hidden)
+                    try:
+                        generate_manifest(self.package_root)
+                    except Exception:
+                        os.replace(hidden, published)
+                        raise
+                    shutil.rmtree(hidden)
+        if draft.is_dir():
+            shutil.rmtree(draft)
 
     def create(self, name):
         package_name(name)
@@ -97,6 +123,9 @@ class PackageService:
         if kind == "reboot":
             delay, message = validate_reboot_options(step)
             clean.update(rebootDelaySeconds=delay, rebootMessage=message)
+        elif kind == "message":
+            message, duration = validate_message_options(step)
+            clean.update(messageText=message, messageDurationSeconds=duration)
         else:
             filename = file_name(step.get("file", ""))
             if filename not in self.files(name):

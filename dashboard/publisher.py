@@ -12,7 +12,7 @@ import tempfile
 
 PACKAGE_RE = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9_.-]*\Z")
 FILE_RE = re.compile(r"[A-Za-z0-9_. -]+\Z")
-TYPES = {"exe", "msi", "bat", "ps1", "vbs", "reboot"}
+TYPES = {"exe", "msi", "bat", "ps1", "vbs", "reboot", "message"}
 EXTENSIONS = {"exe": ".exe", "msi": ".msi", "bat": ".bat", "ps1": ".ps1", "vbs": ".vbs"}
 RESERVED = re.compile(r"(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)", re.I)
 
@@ -43,6 +43,17 @@ def validate_reboot_options(step):
     return delay, message
 
 
+def validate_message_options(step):
+    message = step.get("messageText", "")
+    duration = step.get("messageDurationSeconds", 60)
+    if (not isinstance(message, str) or not message.strip() or len(message) > 512
+            or any(ord(char) < 32 and char != "\n" for char in message)):
+        raise ValueError("El aviso necesita un texto de hasta 512 caracteres, sin caracteres de control.")
+    if type(duration) is not int or not 1 <= duration <= 3600:
+        raise ValueError("La duración del aviso debe ser un número entero entre 1 y 3600 segundos.")
+    return message.strip(), duration
+
+
 def validate_definition(definition, available_files):
     name = package_name(definition.get("name", ""))
     steps = definition.get("steps", [])
@@ -58,6 +69,8 @@ def validate_definition(definition, available_files):
             raise ValueError(f"Tipo de paso inválido: {identifier}")
         if step["type"] == "reboot":
             validate_reboot_options(step)
+        elif step["type"] == "message":
+            validate_message_options(step)
         else:
             selected = file_name(step.get("file", ""))
             if selected not in available_files:
