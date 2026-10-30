@@ -10,7 +10,7 @@ from PIL import ImageGrab
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from dashboard.desktop import StepDialog, VrxDesktop
+from dashboard.desktop import BG, CARD, StepDialog, VrxDesktop
 from dashboard.service import PackageService
 
 
@@ -18,6 +18,8 @@ OUTPUT = Path(__file__).resolve().parents[1] / "docs" / "screenshots"
 
 
 def capture(window, filename):
+    window.attributes("-topmost", True)
+    window.lift()
     window.update_idletasks()
     window.update()
     time.sleep(0.25)
@@ -26,7 +28,11 @@ def capture(window, filename):
     top = window.winfo_rooty()
     right = left + window.winfo_width()
     bottom = top + window.winfo_height()
-    ImageGrab.grab(bbox=(left, top, right, bottom)).save(OUTPUT / filename, optimize=True)
+    image = ImageGrab.grab(bbox=(left, top, right, bottom))
+    expected = CARD if isinstance(window, StepDialog) else BG
+    if image.convert("RGB").getpixel((50, 100)) != tuple(bytes.fromhex(expected[1:])):
+        raise RuntimeError("La ventana del dashboard no está visible; se canceló la captura.")
+    image.save(OUTPUT / filename, optimize=True)
 
 
 def main():
@@ -71,12 +77,12 @@ def main():
 
             for tab, filename in (
                 ("Archivos", "01-archivos.png"),
-                ("Pasos", "02-pasos.png"),
+                ("Acciones", "02-pasos.png"),
                 ("Publicar", "04-publicar.png"),
             ):
                 app.show_tab(tab, animate=False)
                 capture(app, filename)
-                if tab == "Pasos":
+                if tab == "Acciones":
                     app.steps_list._parent_canvas.yview_moveto(1.0)
                     capture(app, "02b-pasos-final.png")
 

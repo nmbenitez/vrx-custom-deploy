@@ -41,6 +41,19 @@ try {
     Write-Host "LastExitCode: $($State.LastExitCode)"
     Write-Host "UpdatedAt: $($State.UpdatedAt)"
 
+    $StepName = if (-not [string]::IsNullOrWhiteSpace([string]$State.CurrentStepLabel)) {
+        [string]$State.CurrentStepLabel
+    } else {
+        [string]$State.CurrentStepId
+    }
+    if ($State.Status -eq 'Failed') {
+        if ($StepName) { Write-Host "FailedStep: $StepName (id: $($State.CurrentStepId), type: $($State.CurrentStepType))" }
+        if ($State.LastError) { Write-Host "LastError: $($State.LastError)" }
+    } elseif ($State.Status -ne 'Completed') {
+        if ($StepName) { Write-Host "PendingStep: $StepName (id: $($State.CurrentStepId), type: $($State.CurrentStepType))" }
+        if ($State.Status -eq 'WaitingForUser') { Write-Host 'PendingReason: waiting for a user to sign in.' }
+    }
+
     if ($State.Status -eq "Completed") { exit 0 }
     if ($State.Status -eq "Failed") { exit 1 }
     exit 2

@@ -85,6 +85,11 @@ assert "if ($State.Status -eq 'Completed')" in engine
 assert "if ($Step.type -eq 'message')" in engine
 assert "Send-UserMessage -Message ([string]$Step.messageText)" in engine
 assert "if ($Step.type -notin @('reboot','message'))" in engine
+assert 'WTSQuerySessionInformationW' in engine
+assert 'if (active == 0) return 0;' in engine
+assert "$State.Status = 'WaitingForUser'" in engine
+assert 'Install-ResumeTask' in engine.split("if ($Step.type -eq 'message')", 1)[1].split('$ExecutableFile = Resolve-StepFile', 1)[0]
+assert 'CurrentStepLabel' in engine and 'LastError' in engine
 if shutil.which('powershell'):
     source = engine.split("Add-Type -TypeDefinition @'\n", 1)[1].split("\n'@", 1)[0]
     encoded = base64.b64encode(source.encode('utf-8')).decode('ascii')
@@ -93,7 +98,65 @@ if shutil.which('powershell'):
         "Add-Type -TypeDefinition $source -ErrorAction Stop"
     )
     subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command', compile_command], check=True)
+    message_branch = "if ($Step.type -eq 'message') {" + engine.split(
+        "if ($Step.type -eq 'message') {", 1
+    )[1].split('$ExecutableFile = Resolve-StepFile', 1)[0]
+    with tempfile.TemporaryDirectory() as directory:
+        probe = Path(directory) / 'probe.ps1'
+        for initial_status, delivered, expected in (
+            ('Running', 0, ('TASK_REGISTERED', 'SAVED:WaitingForUser:0')),
+            ('WaitingForUser', 1, ('SAVED:Running:1',)),
+        ):
+            probe.write_text(
+                "$Step = [pscustomobject]@{type='message'; id='notice'; messageText='Test'; messageDurationSeconds=1}\n"
+                f"$State = [pscustomobject]@{{Status='{initial_status}'; NextStep=0; LastExitCode=$null; UpdatedAt=''}}\n"
+                "$Index = 0; $TaskName = 'test'\n"
+                f"function Send-UserMessage {{ param([string]$Message, [int]$DurationSeconds) return {delivered} }}\n"
+                "function Install-ResumeTask { Write-Host 'TASK_REGISTERED' }\n"
+                "function Get-ScheduledTask { return $null }\n"
+                'function Save-DeploymentState { Write-Host "SAVED:$($State.Status):$($State.NextStep)" }\n'
+                'function Write-DeploymentLog { Write-Host "LOG:$LogMessage" }\n'
+                "foreach ($item in @(1)) {\n" + message_branch + "\n}\n",
+                encoding='utf-8',
+            )
+            result = subprocess.run(
+                ['powershell', '-NoProfile', '-NonInteractive', '-File', str(probe)],
+                capture_output=True, text=True, errors='replace',
+            )
+            assert result.returncode == 0, result.stderr
+            for marker in expected:
+                assert marker in result.stdout, result.stdout
+
+        status_script = read_text(windows / '10-vrx-check-status.ps1')
+        status_script = status_script.replace('$RemoteFolder = "example-package"', '$RemoteFolder = "probe"')
+        status_script = status_script.replace(
+            '$EngineRoot = "C:\\ProgramData\\vRxDeploy"', f'$EngineRoot = "{Path(directory).as_posix()}"'
+        )
+        probe.write_text(status_script, encoding='utf-8')
+        state_dir = Path(directory) / 'probe'
+        state_dir.mkdir()
+        state_file = state_dir / 'deployment-state.json'
+        for status, code, marker in (
+            ('WaitingForUser', 2, 'PendingStep: Mostrar resumen (id: notice, type: message)'),
+            ('Failed', 1, 'FailedStep: Mostrar resumen (id: notice, type: message)'),
+            ('Completed', 0, 'Status: Completed'),
+        ):
+            state_file.write_text(json.dumps({
+                'Package': 'probe', 'Status': status, 'NextStep': 0,
+                'CurrentStepId': 'notice', 'CurrentStepLabel': 'Mostrar resumen',
+                'CurrentStepType': 'message', 'LastError': 'Test failure',
+            }), encoding='utf-8')
+            result = subprocess.run(
+                ['powershell', '-NoProfile', '-NonInteractive', '-File', str(probe)],
+                capture_output=True, text=True, errors='replace',
+            )
+            assert result.returncode == code, result.stderr
+            assert marker in result.stdout, result.stdout
+            if status == 'Failed':
+                assert 'LastError: Test failure' in result.stdout, result.stdout
 reboot_manager = read_text(windows / '07-reboot-manager.ps1')
+assert 'New-ScheduledTaskTrigger -AtLogOn' in reboot_manager
+assert "$LogonTrigger.Delay = 'PT20S'" in reboot_manager
 assert 'Unregister-ScheduledTask -TaskName $TaskName' in reboot_manager
 assert 'Unregister-ScheduledTask -TaskName $LaunchTaskName' in reboot_manager
 

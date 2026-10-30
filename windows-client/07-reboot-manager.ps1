@@ -7,10 +7,12 @@ function Install-ResumeTask {
     $PowerShellExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
     $ActionArgs = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $EngineFile + '"'
     $Action = New-ScheduledTaskAction -Execute $PowerShellExe -Argument $ActionArgs
-    $Trigger = New-ScheduledTaskTrigger -AtStartup
+    $StartupTrigger = New-ScheduledTaskTrigger -AtStartup
+    $LogonTrigger = New-ScheduledTaskTrigger -AtLogOn
+    $LogonTrigger.Delay = 'PT20S' # Allow the user's desktop to finish opening.
     $Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
     $Settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 12) -MultipleInstances IgnoreNew -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 2)
-    Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Force | Out-Null
+    Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger @($StartupTrigger, $LogonTrigger) -Principal $Principal -Settings $Settings -Force | Out-Null
 }
 
 function Remove-ResumeTask {

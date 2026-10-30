@@ -24,6 +24,8 @@ Estas pruebas requieren una VM Windows descartable con PowerShell 5.1 y acceso a
 | Doble lanzamiento | Ejecutar otra vez el mismo bootstrap | Informa que el paquete ya está en cola o activo; no crea dos instalaciones. |
 | Integridad | Alterar un archivo descargado en la VM antes de reintentar | El archivo se descarga de nuevo y solo se acepta después de verificar tamaño y SHA-256. |
 | Consulta de estado | Ejecutar `10-vrx-check-status.ps1` durante y después | Código `2` mientras está pendiente o `Staged`; `0` al completar el despliegue; `1` si falla. |
+| Aviso después de reiniciar sin usuario | Configurar `Reiniciar Windows` seguido de `Mostrar mensaje`, reiniciar y demorar el inicio de sesión | El estado queda en `WaitingForUser` y la consulta muestra `PendingStep` con el nombre del aviso. Al iniciar sesión, aparece el aviso y el estado pasa a `Completed` si era el último paso. |
+| Falla de un paso | Ejecutar un paso de laboratorio que devuelva un código no permitido | La consulta desde vRx devuelve código `1`, `FailedStep` con el nombre del paso y `LastError` con la causa. |
 
 Revisar en la VM `C:\ProgramData\vRxDeploy\<paquete>\launch-receipt.json`, `launch-worker.log`, `deployment-state.json` y `deployment.log`. Confirmar también los disparadores y el historial de `vRxDeploy-Launch` en Task Scheduler.
 

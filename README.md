@@ -63,13 +63,13 @@ Las capturas muestran un **ejemplo ficticio** tomado en Windows. El programa es 
 
 ### 1. Crear el borrador y cargar archivos
 
-Pulsá **+ Nuevo** e ingresá un nombre único, por ejemplo `demo-oficina-v1`. Ese nombre será el directorio publicado y el valor de `$RemoteFolder` en vRx. Después, en **Archivos**, pulsá **+ Agregar archivos** y elegí los instaladores o scripts que ejecutarán las PC. Para el ejemplo se cargaron un `.exe` y un `.bat`.
+Pulsá **+ Nuevo** e ingresá un nombre único, por ejemplo `demo-oficina-v1`. Ese nombre será el directorio publicado y el valor de `$RemoteFolder` en vRx. El ícono de dos hojas junto al título copia ese nombre al portapapeles. Después, en **Archivos**, pulsá **+ Agregar archivos** y elegí los instaladores o scripts que ejecutarán las PC. Para el ejemplo se cargaron un `.exe` y un `.bat`. El botón **Siguiente paso: Acciones** abre la segunda sección.
 
 ![Vista de archivos del paquete de ejemplo](docs/screenshots/01-archivos.png)
 
-### 2. Agregar los pasos en orden
+### 2. Configurar las acciones en orden
 
-Entrá en **Pasos** y pulsá **+ Agregar paso** por cada acción. Primero debe existir un paquete creado con **+ Nuevo**. La descripción identifica el paso en la lista; el orden se cambia con las flechas.
+Entrá en **Acciones** y pulsá **+ Agregar acción** por cada paso. Primero debe existir un paquete creado con **+ Nuevo**. La descripción identifica el paso en la lista; el orden se cambia con las flechas. El botón **Siguiente paso: Publicar** abre la última sección. Si un archivo no corresponde al tipo elegido, el editor muestra el error y conserva lo que ya escribiste para corregirlo.
 
 | Orden | Descripción de ejemplo | Acción | Archivo | Argumentos | Códigos de éxito |
 | --- | --- | --- | --- | --- | --- |
@@ -80,7 +80,7 @@ Entrá en **Pasos** y pulsá **+ Agregar paso** por cada acción. Primero debe e
 
 Los argumentos dependen del instalador real; `/S` aquí es solo un ejemplo. El código `3010` significa que el instalador solicita un reinicio. Si el siguiente paso ya es **Reiniciar Windows**, ese paso realiza el reinicio con su aviso configurado.
 
-También podés elegir **Mostrar mensaje** para sumar un aviso emergente como paso independiente, por ejemplo antes de instalar o al finalizar. No requiere archivo: configurás el texto y los segundos que quedará visible. El despliegue continúa sin esperar que el usuario cierre el aviso; si no hay una sesión activa, ese paso falla.
+También podés elegir **Mostrar mensaje** para sumar un aviso emergente como paso independiente, por ejemplo antes de instalar o al finalizar. No requiere archivo: configurás el texto y los segundos que quedará visible. Si la PC reinicia y todavía no hay un usuario conectado, el paso queda pendiente (`WaitingForUser`): Windows lo muestra después del siguiente inicio de sesión y luego continúa la automatización. El despliegue no espera que el usuario cierre el aviso.
 
 ![Primeros pasos del paquete](docs/screenshots/02-pasos.png)
 
@@ -131,6 +131,8 @@ Estas son las variables que puede cambiar el operador. Los archivos del paquete 
 Lanzá `DownloadOnly` para los grupos y horarios elegidos. Cuando toque instalar, cambiá solo `$BootstrapMode` a `"Deploy"` y ejecutá de nuevo la misma acción. Si elegís `Deploy` desde el principio, descarga lo que falte y luego instala. El bootstrap devuelve el control a vRx enseguida; la tarea local continúa por su cuenta.
 
 Si ya habías cargado una versión anterior del bootstrap en vRx, reemplazá el contenido de esa acción por la versión actual para habilitar el paso **Mostrar mensaje**. Esto se hace al actualizar el sistema, **no cada vez que creás un paquete**. Si vRx programa ejecuciones futuras de una misma acción, comprobá si conserva las variables al programarlas o lee su valor al ejecutarlas antes de cambiar `DownloadOnly` a `Deploy`.
+
+Para consultar el avance desde vRx, ejecutá `windows-client/10-vrx-check-status.ps1` como otra acción, con `$RemoteFolder` configurado para el paquete. Cuando espera un inicio de sesión, devuelve `WaitingForUser` y `PendingStep` con el nombre del paso. Si falla un paso, devuelve `FailedStep` y `LastError`. El código de salida es `2` mientras espera, `1` si falló y `0` cuando todos los pasos terminaron (`Completed`).
 
 ## Archivos y verificaciones
 

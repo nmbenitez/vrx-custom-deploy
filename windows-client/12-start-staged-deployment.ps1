@@ -34,7 +34,7 @@ try {
         $Existing = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
         if ($Existing.Status -eq 'Completed') { Write-Host 'Package already completed.'; exit 0 }
         if ($Existing.Status -eq 'Failed') { throw 'Previous deployment failed; review logs before retrying.' }
-        if ($Existing.Status -in @('Running','WaitingForReboot')) {
+        if ($Existing.Status -in @('Running','WaitingForReboot','WaitingForUser')) {
             Write-Host "Deployment already in progress: $($Existing.Status)"; exit 0
         }
     }
@@ -58,7 +58,7 @@ try {
     $EngineFile = Join-Path $EngineInstallDir '06-deployment-engine.ps1'
     & $PowerShellExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $EngineFile
     if ($LASTEXITCODE -ne 0) { throw "Deployment engine returned code $LASTEXITCODE" }
-    Write-Host 'Deployment accepted. Check deployment-state.json for Completed/WaitingForReboot status.'
+    Write-Host 'Deployment accepted. Check deployment-state.json for Completed/WaitingForReboot/WaitingForUser status.'
     exit 0
 } catch {
     Write-Error "Staged deployment start failed: $($_.Exception.Message)"

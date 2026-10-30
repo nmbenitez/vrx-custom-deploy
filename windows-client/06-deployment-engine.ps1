@@ -77,11 +77,29 @@ public static class VrxSessionMessage {
     [DllImport("wtsapi32.dll", EntryPoint = "WTSFreeMemory")]
     private static extern void FreeMemory(IntPtr pointer);
 
+    [DllImport("wtsapi32.dll", EntryPoint = "WTSQuerySessionInformationW", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QuerySessionInformation(IntPtr server, int sessionId, int infoClass,
+        out IntPtr buffer, out int bytesReturned);
+
     [DllImport("wtsapi32.dll", EntryPoint = "WTSSendMessageW", SetLastError = true, CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SendMessage(IntPtr server, int sessionId, string title, int titleBytes,
         string message, int messageBytes, int style, int timeout, out int response,
         [MarshalAs(UnmanagedType.Bool)] bool wait);
+
+    private static bool HasLoggedOnUser(int sessionId) {
+        IntPtr buffer = IntPtr.Zero;
+        int bytesReturned;
+        // WTSUserName = 5. An active console at the sign-in screen has no user name.
+        if (!QuerySessionInformation(IntPtr.Zero, sessionId, 5, out buffer, out bytesReturned))
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot query Windows session user.");
+        try {
+            return bytesReturned > 2 && !String.IsNullOrWhiteSpace(Marshal.PtrToStringUni(buffer));
+        } finally {
+            if (buffer != IntPtr.Zero) FreeMemory(buffer);
+        }
+    }
 
     public static int Send(string message, int seconds) {
         IntPtr sessions = IntPtr.Zero;
@@ -97,7 +115,8 @@ public static class VrxSessionMessage {
             for (int i = 0; i < count; i++) {
                 IntPtr address = new IntPtr(sessions.ToInt64() + (long)i * size);
                 SessionInfo session = (SessionInfo)Marshal.PtrToStructure(address, typeof(SessionInfo));
-                if (session.SessionId == 0 || session.State != 0) continue; // WTSActive
+                if (session.SessionId == 0 || session.State != 0 || !HasLoggedOnUser(session.SessionId))
+                    continue; // WTSActive with a signed-in user
                 active++;
                 int response;
                 if (SendMessage(IntPtr.Zero, session.SessionId, title, Encoding.Unicode.GetByteCount(title),
@@ -111,7 +130,7 @@ public static class VrxSessionMessage {
             if (sessions != IntPtr.Zero) FreeMemory(sessions);
         }
         if (sent == 0) {
-            if (active == 0) throw new InvalidOperationException("No active user session for message step.");
+            if (active == 0) return 0; // Keep the step pending until a user signs in.
             throw new Win32Exception(firstError, "Could not show the message to an active user session.");
         }
         return sent;
@@ -158,13 +177,21 @@ try {
             Status = 'Running'
             BootMarker = ''
             LastExitCode = $null
+            CurrentStepId = ''
+            CurrentStepLabel = ''
+            CurrentStepType = ''
+            LastError = ''
             UpdatedAt = (Get-Date).ToUniversalTime().ToString('o')
         }
         Save-DeploymentState
     }
 
     if ($State.Status -eq 'Completed') { $LogMessage = 'Already completed.'; Write-DeploymentLog; Remove-ResumeTask; Remove-LaunchTask; exit 0 }
-    if ($State.Status -eq 'Failed') { throw 'Previous attempt failed. Inspect log and state; explicit reset required.' }
+    if ($State.Status -eq 'Failed') {
+        $LogMessage = 'Previous attempt failed. Inspect log and state; explicit reset required.'
+        Write-DeploymentLog
+        exit 1
+    }
     if ($State.Status -eq 'WaitingForReboot') {
         $CurrentBoot = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().ToString('o')
         if ($CurrentBoot -eq $State.BootMarker) {
@@ -182,6 +209,11 @@ try {
     Check-PackageSnapshot
     for ($Index = [int]$State.NextStep; $Index -lt $Steps.Count; $Index++) {
         $Step = $Steps[$Index]
+        $StepLabel = if ([string]::IsNullOrWhiteSpace([string]$Step.label)) { [string]$Step.id } else { [string]$Step.label }
+        $State | Add-Member -NotePropertyName CurrentStepId -NotePropertyValue ([string]$Step.id) -Force
+        $State | Add-Member -NotePropertyName CurrentStepLabel -NotePropertyValue $StepLabel -Force
+        $State | Add-Member -NotePropertyName CurrentStepType -NotePropertyValue ([string]$Step.type) -Force
+        Save-DeploymentState
         $LogMessage = "Starting step $($Index + 1)/$($Steps.Count): $($Step.id) ($($Step.type))"
         Write-DeploymentLog
 
@@ -206,6 +238,23 @@ try {
                 throw "Invalid message duration in step $($Step.id)."
             }
             $SessionCount = Send-UserMessage -Message ([string]$Step.messageText) -DurationSeconds $DurationSeconds
+            if ($SessionCount -eq 0) {
+                if ($State.Status -ne 'WaitingForUser' -or
+                    -not (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue)) {
+                    Install-ResumeTask
+                }
+                # A sign-in could have happened while the task was being registered.
+                $SessionCount = Send-UserMessage -Message ([string]$Step.messageText) -DurationSeconds $DurationSeconds
+                if ($SessionCount -eq 0) {
+                    $State.Status = 'WaitingForUser'
+                    $State.UpdatedAt = (Get-Date).ToUniversalTime().ToString('o')
+                    Save-DeploymentState
+                    $LogMessage = "Message step $($Step.id) pending until a user signs in."
+                    Write-DeploymentLog
+                    exit 0
+                }
+            }
+            $State.Status = 'Running'
             $State.NextStep = $Index + 1
             $State.LastExitCode = 0
             $State.UpdatedAt = (Get-Date).ToUniversalTime().ToString('o')
@@ -280,6 +329,7 @@ try {
     Write-DeploymentLog
     if ($null -ne $State) {
         $State.Status = 'Failed'
+        $State | Add-Member -NotePropertyName LastError -NotePropertyValue $Failure -Force
         $State.UpdatedAt = (Get-Date).ToUniversalTime().ToString('o')
         try { Save-DeploymentState } catch {}
     }

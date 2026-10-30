@@ -10,7 +10,7 @@ from tkinter import filedialog, messagebox
 import unicodedata
 
 import customtkinter as ctk
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from .publisher import validate_message_options
 from .service import PackageService
@@ -37,6 +37,7 @@ TYPE_NAMES = {
     "message": "Mostrar mensaje",
 }
 TYPE_CODES = {label: code for code, label in TYPE_NAMES.items()}
+SECTIONS = ("Archivos", "Acciones", "Publicar")
 
 
 def slug(value):
@@ -65,14 +66,23 @@ def action_button(parent, text, command, primary=False, width=120, height=36):
     )
 
 
+def copy_icon():
+    image = Image.new("RGBA", (40, 40), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.line(((7, 26), (7, 4), (28, 4), (28, 8)), fill=TEXT, width=3)
+    draw.rounded_rectangle((13, 10, 35, 36), radius=3, outline=TEXT, width=3)
+    return ctk.CTkImage(light_image=image, dark_image=image, size=(20, 20))
+
+
 class StepDialog(ctk.CTkToplevel):
-    def __init__(self, parent, files, existing=None):
+    def __init__(self, parent, files, existing=None, on_save=None):
         super().__init__(parent, fg_color=BG)
-        self.title("Editar paso" if existing else "Agregar paso")
+        self.title("Editar acción" if existing else "Agregar acción")
         self.geometry("560x495")
         self.resizable(False, False)
         self.transient(parent)
         self.result = None
+        self.on_save = on_save
         existing = existing or {}
         self.label_var = tk.StringVar(value=existing.get("label", existing.get("id", "")))
         self.type_var = tk.StringVar(value=TYPE_NAMES.get(existing.get("type", "msi"), "Instalar MSI"))
@@ -86,7 +96,7 @@ class StepDialog(ctk.CTkToplevel):
         card = ctk.CTkScrollableFrame(self, fg_color=CARD, corner_radius=18)
         card.pack(fill="both", expand=True, padx=18, pady=(18, 0))
         card.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(card, text="CONFIGURAR PASO", text_color=ACCENT,
+        ctk.CTkLabel(card, text="CONFIGURAR ACCIÓN", text_color=ACCENT,
                      font=(FONT, 11, "bold")).grid(row=0, column=0, sticky="w", padx=24, pady=(20, 2))
         ctk.CTkLabel(card, text="Definí qué ejecutará Windows", text_color=TEXT,
                      font=(FONT, 18, "bold")).grid(row=1, column=0, sticky="w", padx=24, pady=(0, 12))
@@ -115,7 +125,7 @@ class StepDialog(ctk.CTkToplevel):
         self.message_text.grid(row=1, column=0, sticky="ew", padx=24, pady=(2, 9))
         self.message_text.insert("1.0", existing.get("messageText", ""))
         self._entry(self.message_fields, 2, "Visible durante (segundos)", self.message_duration_var)
-        ctk.CTkLabel(self.message_fields, text="Se muestra a los usuarios conectados; la secuencia continúa.",
+        ctk.CTkLabel(self.message_fields, text="Sin usuario conectado, se muestra al iniciar sesión y luego continúa.",
                      text_color=MUTED, font=(FONT, 10)).grid(row=4, column=0, sticky="w", padx=24)
         self.install_hint = ctk.CTkLabel(card, text="Ejemplo: 0,3010. MSI agrega /i y /norestart.",
                                          text_color=MUTED, font=(FONT, 10))
@@ -123,7 +133,7 @@ class StepDialog(ctk.CTkToplevel):
         buttons = ctk.CTkFrame(self, fg_color="transparent")
         buttons.pack(fill="x", padx=18, pady=(8, 18))
         action_button(buttons, "Cancelar", self.destroy, width=104).pack(side="left", padx=(0, 8))
-        self.save_button = action_button(buttons, "Guardar paso", self._save, primary=True, width=130)
+        self.save_button = action_button(buttons, "Guardar acción", self._save, primary=True, width=130)
         self.save_button.pack(side="right")
         self._toggle_fields()
         self.after(30, self.grab_set)
@@ -175,7 +185,7 @@ class StepDialog(ctk.CTkToplevel):
         label = self.label_var.get().strip()
         identifier = slug(label)
         if not label or not identifier:
-            messagebox.showerror("Paso incompleto", "Escribí una descripción para el paso.", parent=self)
+            messagebox.showerror("Acción incompleta", "Escribí una descripción para la acción.", parent=self)
             return
         step = {"id": identifier, "label": label, "type": TYPE_CODES[self.type_var.get()]}
         if step["type"] == "reboot":
@@ -205,7 +215,7 @@ class StepDialog(ctk.CTkToplevel):
             step.update(messageText=message, messageDurationSeconds=duration)
         else:
             if self.file_var.get() == "Sin archivos":
-                messagebox.showerror("Paso incompleto", "Primero cargá un archivo.", parent=self)
+                messagebox.showerror("Acción incompleta", "Primero cargá un archivo.", parent=self)
                 return
             try:
                 codes = [int(value.strip()) for value in self.codes_var.get().split(",")]
@@ -213,6 +223,12 @@ class StepDialog(ctk.CTkToplevel):
                 messagebox.showerror("Códigos inválidos", "Usá números separados por comas.", parent=self)
                 return
             step.update(file=self.file_var.get(), arguments=self.arguments_var.get(), successCodes=codes)
+        if self.on_save is not None:
+            try:
+                self.on_save(step)
+            except Exception as error:
+                messagebox.showerror("No se pudo guardar la acción", str(error), parent=self)
+                return
         self.result = step
         self.destroy()
 
@@ -344,16 +360,25 @@ class VrxDesktop(ctk.CTk):
         heading = ctk.CTkFrame(workspace, fg_color="transparent")
         heading.grid(row=0, column=0, sticky="ew", padx=24, pady=(20, 8))
         heading.grid_columnconfigure(0, weight=1)
-        self.title_label = ctk.CTkLabel(heading, text="Seleccioná o creá una automatización",
+        title_row = ctk.CTkFrame(heading, fg_color="transparent")
+        title_row.grid(row=0, column=0, sticky="w")
+        self.title_label = ctk.CTkLabel(title_row, text="Seleccioná o creá una automatización",
                                         text_color=TEXT, font=(FONT, 20, "bold"))
-        self.title_label.grid(row=0, column=0, sticky="w")
+        self.title_label.pack(side="left")
+        self.copy_image = copy_icon()
+        self.copy_button = ctk.CTkButton(
+            title_row, text="", image=self.copy_image, command=self.copy_automation_name,
+            width=34, height=32, corner_radius=8, fg_color=SURFACE_HOVER,
+            hover_color=BORDER, state="disabled",
+        )
+        self.copy_button.pack(side="left", padx=(9, 0))
         self.state_badge = ctk.CTkLabel(heading, text="BORRADOR", text_color=ACCENT,
                                         fg_color=SURFACE_HOVER, corner_radius=10,
                                         width=94, height=29, font=(FONT, 10, "bold"))
         self.state_badge.grid(row=0, column=1, sticky="e")
         tab_bar = ctk.CTkFrame(workspace, fg_color=SURFACE, corner_radius=13)
         tab_bar.grid(row=1, column=0, sticky="w", padx=24, pady=(0, 8))
-        for index, name in enumerate(("Archivos", "Pasos", "Publicar")):
+        for index, name in enumerate(SECTIONS):
             item = ctk.CTkFrame(tab_bar, fg_color="transparent", corner_radius=10)
             item.grid(row=0, column=index, padx=4, pady=4)
             number = ctk.CTkLabel(item, text=str(index + 1), fg_color=TAB_NUMBER,
@@ -370,13 +395,13 @@ class VrxDesktop(ctk.CTk):
         self.page_host = ctk.CTkFrame(workspace, fg_color=CARD, corner_radius=0)
         self.page_host.grid(row=2, column=0, sticky="nsew", padx=16, pady=(0, 16))
         for name, build in (("Archivos", self._build_files),
-                            ("Pasos", self._build_steps),
+                            ("Acciones", self._build_steps),
                             ("Publicar", self._build_publish)):
             page = ctk.CTkFrame(self.page_host, fg_color=CARD, corner_radius=0)
             self.tab_pages[name] = page
             build(page)
         self.show_tab("Archivos", animate=False)
-        for index, name in enumerate(("Archivos", "Pasos", "Publicar"), start=1):
+        for index, name in enumerate(SECTIONS, start=1):
             self.bind(f"<Control-Key-{index}>", lambda _event, tab=name: self.show_tab(tab))
 
     def show_tab(self, name, animate=True):
@@ -420,23 +445,37 @@ class VrxDesktop(ctk.CTk):
                                                  scrollbar_button_hover_color=ACCENT)
         self.files_list.grid(row=2, column=0, sticky="nsew", padx=10)
         self.files_list.grid_columnconfigure(0, weight=1)
-        action_button(tab, "+ Agregar archivos", self.add_files, primary=True,
-                      width=174).grid(row=3, column=0, sticky="w", padx=10, pady=14)
+        controls = ctk.CTkFrame(tab, fg_color="transparent")
+        controls.grid(row=3, column=0, sticky="ew", padx=10, pady=14)
+        controls.grid_columnconfigure(1, weight=1)
+        action_button(controls, "+ Agregar archivos", self.add_files, primary=True,
+                      width=174).grid(row=0, column=0, sticky="w")
+        self.next_files_button = action_button(
+            controls, "Siguiente paso: Acciones →", lambda: self.show_tab("Acciones"), width=205
+        )
+        self.next_files_button.grid(row=0, column=2, sticky="e")
 
     def _build_steps(self, tab):
         tab.grid_columnconfigure(0, weight=1)
         tab.grid_rowconfigure(2, weight=1)
         ctk.CTkLabel(tab, text="Secuencia de ejecución", text_color=TEXT,
                      font=(FONT, 16, "bold")).grid(row=0, column=0, sticky="w", padx=10, pady=(18, 0))
-        ctk.CTkLabel(tab, text="Los pasos se ejecutan en el orden mostrado.",
+        ctk.CTkLabel(tab, text="Las acciones se ejecutan en el orden mostrado.",
                      text_color=MUTED, font=(FONT, 11)).grid(row=1, column=0, sticky="w", padx=10, pady=(0, 12))
         self.steps_list = ctk.CTkScrollableFrame(tab, fg_color=SURFACE, corner_radius=13,
                                                  scrollbar_button_color=BORDER,
                                                  scrollbar_button_hover_color=ACCENT)
         self.steps_list.grid(row=2, column=0, sticky="nsew", padx=10)
         self.steps_list.grid_columnconfigure(0, weight=1)
-        action_button(tab, "+ Agregar paso", self.add_step, primary=True,
-                      width=148).grid(row=3, column=0, sticky="w", padx=10, pady=14)
+        controls = ctk.CTkFrame(tab, fg_color="transparent")
+        controls.grid(row=3, column=0, sticky="ew", padx=10, pady=14)
+        controls.grid_columnconfigure(1, weight=1)
+        action_button(controls, "+ Agregar acción", self.add_step, primary=True,
+                      width=158).grid(row=0, column=0, sticky="w")
+        self.next_actions_button = action_button(
+            controls, "Siguiente paso: Publicar →", lambda: self.show_tab("Publicar"), width=205
+        )
+        self.next_actions_button.grid(row=0, column=2, sticky="e")
 
     def _build_publish(self, tab):
         tab.grid_columnconfigure(0, weight=1)
@@ -560,6 +599,17 @@ class VrxDesktop(ctk.CTk):
         self.selected_name = name
         self.refresh()
 
+    def copy_automation_name(self):
+        if not self.selected_name:
+            return
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(self.selected_name)
+            self.update_idletasks()
+            self.status_var.set(f"Nombre copiado: {self.selected_name}")
+        except tk.TclError as error:
+            self._error(error)
+
     def _clear_rows(self, frame):
         for child in frame.winfo_children():
             child.destroy()
@@ -575,6 +625,7 @@ class VrxDesktop(ctk.CTk):
         self._clear_rows(self.files_list)
         self._clear_rows(self.steps_list)
         name = self.selected_name
+        self.copy_button.configure(state="normal" if name else "disabled")
         if not name:
             self.title_label.configure(text="Seleccioná o creá una automatización")
             self.state_badge.configure(text="SIN PAQUETE")
@@ -582,7 +633,7 @@ class VrxDesktop(ctk.CTk):
             self._show_scrollbar(self.files_list, False)
             self._show_scrollbar(self.steps_list, False)
             self._empty(self.files_list, "Cargá los instaladores y scripts para comenzar.")
-            self._empty(self.steps_list, "Agregá los pasos que ejecutará Windows.")
+            self._empty(self.steps_list, "Agregá las acciones que ejecutará Windows.")
             return
         is_published = name in published
         self.title_label.configure(text=name)
@@ -606,7 +657,7 @@ class VrxDesktop(ctk.CTk):
             action_button(row, "Quitar", lambda file=filename: self.remove_file(file),
                           width=74, height=30).grid(row=0, column=2, padx=10)
         if not steps:
-            self._empty(self.steps_list, "Todavía no hay pasos configurados.")
+            self._empty(self.steps_list, "Todavía no hay acciones configuradas.")
         for index, step in enumerate(steps):
             row = ctk.CTkFrame(self.steps_list, fg_color=SURFACE_HOVER, corner_radius=10)
             row.grid(row=index, column=0, sticky="ew", padx=7, pady=5)
@@ -717,12 +768,13 @@ class VrxDesktop(ctk.CTk):
             self.status_var.set(message)
             messagebox.showinfo("Sin paquete seleccionado", message, parent=self)
             return
-        existing = self.service.load(self.selected_name)["steps"][index] if index is not None else None
-        dialog = StepDialog(self, self.service.files(self.selected_name), existing)
+        name = self.selected_name
+        existing = self.service.load(name)["steps"][index] if index is not None else None
+        dialog = StepDialog(self, self.service.files(name), existing,
+                            on_save=lambda step: self.service.set_step(name, step, index))
         self.wait_window(dialog)
         if dialog.result:
             try:
-                self.service.set_step(self.selected_name, dialog.result, index)
                 self.refresh()
             except Exception as error:
                 self._error(error)
@@ -741,7 +793,7 @@ class VrxDesktop(ctk.CTk):
             self._error(error)
 
     def remove_step(self, index):
-        if not messagebox.askyesno("Quitar paso", "¿Quitar este paso?", parent=self):
+        if not messagebox.askyesno("Quitar acción", "¿Quitar esta acción?", parent=self):
             return
         try:
             self.service.remove_step(self.selected_name, index)

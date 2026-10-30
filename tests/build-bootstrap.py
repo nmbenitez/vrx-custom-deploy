@@ -90,7 +90,7 @@ try {
             Remove-TerminalTasks
             throw "Previous deployment failed: $RemoteFolder. Investigate before resetting state."
         }
-        if ($Existing.Status -in @('Running','WaitingForReboot')) {
+        if ($Existing.Status -in @('Running','WaitingForReboot','WaitingForUser')) {
             Write-Host "ALREADY_ACTIVE: $RemoteFolder ($($Existing.Status)). No duplicate launch issued."
             exit 0
         }

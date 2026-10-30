@@ -34,6 +34,7 @@ try {
         if ($Existing.Status -eq 'Failed') { throw 'Previous deployment failed. Review logs and reset manually.' }
         if ($Existing.Status -eq 'Running') { Write-Host 'Deployment is already running. Check status script; no second start issued.'; exit 0 }
         if ($Existing.Status -eq 'WaitingForReboot') { Write-Host 'Deployment waiting for reboot. Check status script.'; exit 0 }
+        if ($Existing.Status -eq 'WaitingForUser') { Write-Host 'Deployment waiting for a user to sign in. Check status script.'; exit 0 }
     }
 
     Import-Module (Join-Path $PSScriptRoot '02-package-download.psm1') -Force
@@ -61,7 +62,7 @@ try {
     $EngineFile = Join-Path $EngineInstallDir '06-deployment-engine.ps1'
     & $PowerShellExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $EngineFile
     if ($LASTEXITCODE -ne 0) { throw "Deployment engine returned code $LASTEXITCODE" }
-    Write-Host 'Deployment accepted. Check deployment-state.json for Completed/WaitingForReboot status.'
+    Write-Host 'Deployment accepted. Check deployment-state.json for Completed/WaitingForReboot/WaitingForUser status.'
     exit 0
 } catch {
     Write-Error "Deployment start failed: $($_.Exception.Message)"
